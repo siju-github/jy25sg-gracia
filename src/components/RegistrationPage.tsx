@@ -614,6 +614,27 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
       try {
         const reg = await fetchRegistrationByPassIdOrDocId(targetRef);
         if (reg) {
+          const currentEmail = formData.email.trim().toLowerCase();
+          const currentPhoneDigits = formData.phone.replace(/\D/g, '');
+          const regEmail = (reg.email || '').trim().toLowerCase();
+          const regPhoneDigits = (reg.phone || '').replace(/\D/g, '');
+
+          const hasCurrentMatch =
+            (!!currentEmail && regEmail && regEmail === currentEmail) ||
+            (!!currentPhoneDigits && regPhoneDigits && regPhoneDigits === currentPhoneDigits) ||
+            (!currentEmail && !currentPhoneDigits && (reg.passId === targetRef || reg.id === targetRef));
+
+          if (!hasCurrentMatch) {
+            setExistingRecordLoaded(false);
+            setExistingRecordMsg(null);
+            setIsEditLocked(false);
+            setEditLockMsg(null);
+            setPreviouslyPaidAmount(0);
+            setPreviouslyPaidPax(0);
+            setPaymentStatus('idle');
+            return;
+          }
+
           // Check cut-off date (25 Sep 2026)
           const EDIT_DEADLINE = new Date('2026-09-25T23:59:59');
           const isExpired = new Date() > EDIT_DEADLINE;
