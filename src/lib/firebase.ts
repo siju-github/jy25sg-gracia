@@ -32,6 +32,7 @@ import firebaseConfig from '../../firebase-applet-config.json';
 import { ApprovedAdminData, RegistrationData, AdditionalAttendee, RegistrationAuditLog, PortalUserLogItem, TimelineItem, PrayerGroupItem, SiteContentData, ContactMessageItem, ContactMessageReply } from '../types';
 import { INITIAL_TIMELINE, INITIAL_SITE_CONTENT } from '../data/initialData';
 import { getBibleVersePassId, getPersonDeterministicSeed } from './bibleVerses';
+import { clearRegistrationStorageState } from './storageCleanup';
 
 // Super Admin constants
 export const SUPER_ADMIN_EMAIL = 'sijumonabraham@gmail.com';
@@ -772,30 +773,18 @@ export const deleteRegistrationFromFirestore = async (docId: string): Promise<bo
       // ignore
     }
 
-    // Clean up local storage caches
+    // Clean up local storage caches and broadcast to active browser sessions
     try {
-      const keysToRemove = [
-        `draft_registration_${docId}`,
-        `draft_registration_${passId}`,
-        `draft_registration_${paymentReference}`,
-        'draft_registration_latest',
-        `gracia_paid_${docId}`,
-        `gracia_paid_${passId}`,
-        `gracia_paid_${paymentReference}`,
-        `payment_status_${docId}`,
-        `payment_status_${passId}`,
-        `payment_status_${paymentReference}`,
-        `step_${docId}`,
-        `step_${passId}`,
-        `step_${paymentReference}`,
-        `gracia_step_${docId}`,
-        `gracia_step_${passId}`,
-        `gracia_step_${paymentReference}`
-      ];
-      keysToRemove.forEach(k => {
-        if (k) localStorage.removeItem(k);
+      clearRegistrationStorageState({
+        id: docId,
+        passId,
+        paymentReference,
+        email: regData?.email || email,
+        phone: regData?.phone || phone
       });
-    } catch {}
+    } catch (cleanupErr) {
+      console.warn('Registration storage cleanup warning:', cleanupErr);
+    }
 
     return true;
   } catch (err) {

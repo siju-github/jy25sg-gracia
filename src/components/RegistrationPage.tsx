@@ -19,6 +19,7 @@ import {
   fetchRegistrationByPassIdOrDocId,
   checkExistingParticipantByContact
 } from '../lib/firebase';
+import { clearRegistrationStorageState, REGISTRATION_CLEANUP_STORAGE_KEY } from '../lib/storageCleanup';
 import { getBibleVersePassId, getPersonDeterministicSeed } from '../lib/bibleVerses';
 import { toProperCase } from '../lib/utils';
 import { dispatchConfirmationEmails } from '../lib/emailService';
@@ -275,6 +276,13 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
   const resetToFreshFormState = useCallback(() => {
     try {
+      clearRegistrationStorageState({
+        id: refNumber,
+        passId: refNumber,
+        paymentReference: refNumber,
+        email: formData.email,
+        phone: formData.phone
+      });
       localStorage.clear();
       sessionStorage.clear();
     } catch (e) {
@@ -468,6 +476,51 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
       setIsCheckingExisting(false);
     }
   }, [formData.email, formData.phone, existingRecordLoaded, existingRecordMsg, refNumber]);
+
+  useEffect(() => {
+    const handleCleanupSignal = (event: Event) => {
+      const customEvent = event as CustomEvent;
+      const payload = customEvent.detail;
+      if (!payload || payload.type !== 'registration_deleted') return;
+
+      const sessionMatches = payload.emails.includes(formData.email.trim().toLowerCase()) ||
+        payload.phones.includes(formData.phone.replace(/\D/g, '')) ||
+        payload.ids.includes(refNumber) ||
+        payload.passIds.includes(refNumber) ||
+        payload.refs.includes(refNumber);
+
+      if (sessionMatches) {
+        resetToFreshFormState();
+      }
+    };
+
+    window.addEventListener('gracia-registration-cleanup', handleCleanupSignal);
+    const storageHandler = (event: StorageEvent) => {
+      if (event.key !== REGISTRATION_CLEANUP_STORAGE_KEY || !event.newValue) return;
+      try {
+        const payload = JSON.parse(event.newValue);
+        if (!payload || payload.type !== 'registration_deleted') return;
+
+        const sessionMatches = payload.emails.includes(formData.email.trim().toLowerCase()) ||
+          payload.phones.includes(formData.phone.replace(/\D/g, '')) ||
+          payload.ids.includes(refNumber) ||
+          payload.passIds.includes(refNumber) ||
+          payload.refs.includes(refNumber);
+
+        if (sessionMatches) {
+          resetToFreshFormState();
+        }
+      } catch (error) {
+        console.warn('Failed to parse registration cleanup storage event:', error);
+      }
+    };
+
+    window.addEventListener('storage', storageHandler);
+    return () => {
+      window.removeEventListener('gracia-registration-cleanup', handleCleanupSignal);
+      window.removeEventListener('storage', storageHandler);
+    };
+  }, [formData.email, formData.phone, refNumber, resetToFreshFormState]);
 
   // Debounce real-time database check when Email or Phone is typed/updated
   useEffect(() => {

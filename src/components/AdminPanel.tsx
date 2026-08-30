@@ -60,6 +60,7 @@ import { InvitationsAdminPanel } from './InvitationsAdminPanel';
 import { SuperAdminHomePage } from './SuperAdminHomePage';
 import { HitPayInspectorModal } from './HitPayInspectorModal';
 import { PortalAuthSettingsCard } from './PortalAuthSettingsCard';
+import { clearRegistrationStorageState } from '../lib/storageCleanup';
 import { BibleVersesManager } from './BibleVersesManager';
 import { InvitationAdminRole, formatInvitationRoleName, INVITATION_SUB_ROLE_LABELS } from '../data/invitationsData';
 import { getBibleVersePassId, getPersonDeterministicSeed } from '../lib/bibleVerses';
@@ -1173,6 +1174,16 @@ jysg25@jesusyouth.org`
     try {
       // Optimistically update local registrations state
       setRegistrations(prev => prev.filter(r => r.id !== targetId));
+
+      const cleanupRecord = {
+        id: deletingRegistration.id,
+        passId: deletingRegistration.passId,
+        paymentReference: deletingRegistration.paymentReference,
+        email: deletingRegistration.email,
+        phone: deletingRegistration.phone
+      };
+
+      clearRegistrationStorageState(cleanupRecord);
 
       // Attempt Firestore deletion
       try {
