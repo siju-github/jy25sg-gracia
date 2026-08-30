@@ -301,10 +301,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
     const cleanEmail = (emailInput !== undefined ? emailInput : formData.email).trim().toLowerCase();
     const cleanPhone = (phoneInput !== undefined ? phoneInput : formData.phone).trim();
 
-    const hasValidEmail = Boolean(cleanEmail && /\S+@\S+\.\S+/.test(cleanEmail));
-    const hasValidPhone = Boolean(cleanPhone && cleanPhone.replace(/\D/g, '').length >= 8);
+    const hasValidEmail = Boolean(cleanEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail));
+    const hasValidPhone = validatePhoneNumber(cleanPhone) === null;
 
-    if (!hasValidEmail && !hasValidPhone) {
+    if (!hasValidEmail || !hasValidPhone) {
       if (existingRecordLoaded || existingRecordMsg) {
         setExistingRecordLoaded(false);
         setExistingRecordMsg(null);
@@ -447,10 +447,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
     const cleanEmail = formData.email.trim().toLowerCase();
     const cleanPhone = formData.phone.trim();
 
-    const hasValidEmail = Boolean(cleanEmail && /\S+@\S+\.\S+/.test(cleanEmail));
-    const hasValidPhone = Boolean(cleanPhone && cleanPhone.replace(/\D/g, '').length >= 8);
+    const hasValidEmail = Boolean(cleanEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail));
+    const hasValidPhone = validatePhoneNumber(cleanPhone) === null;
 
-    if (!hasValidEmail && !hasValidPhone) {
+    if (!hasValidEmail || !hasValidPhone) {
       if (existingRecordLoaded || existingRecordMsg) {
         setExistingRecordLoaded(false);
         setExistingRecordMsg(null);
@@ -1378,7 +1378,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
                       }
                     }}
                     onBlur={() => {
-                      if (formData.email && /\S+@\S+\.\S+/.test(formData.email)) {
+                      const emailIsValid = Boolean(formData.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()));
+                      const phoneIsValid = validatePhoneNumber(formData.phone) === null;
+
+                      if (emailIsValid && phoneIsValid) {
                         checkAndLoadExistingRecord(formData.email, formData.phone);
                       }
                     }}
@@ -1434,7 +1437,10 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
                           // Scroll screen to phone textbox so user can edit it
                           scrollToErrorInput({ phone: err });
                         } else {
-                          checkAndLoadExistingRecord(formData.email, formData.phone);
+                          const emailIsValid = Boolean(formData.email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim()));
+                          if (emailIsValid) {
+                            checkAndLoadExistingRecord(formData.email, formData.phone);
+                          }
                         }
                       }
                     }}
