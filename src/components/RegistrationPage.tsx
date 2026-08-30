@@ -925,6 +925,15 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
     }, 50);
   };
 
+  const hasValidEmail = useCallback((value: string) => {
+    const cleanValue = value.trim();
+    return Boolean(cleanValue && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanValue));
+  }, []);
+
+  const hasValidPhone = useCallback((value: string) => {
+    return validatePhoneNumber(value) === null;
+  }, []);
+
   // Form Validation for Step 1
   const validateStep1 = () => {
     const errors: { [key: string]: string } = {};
@@ -1036,32 +1045,8 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
         return;
       }
 
-      // Prepare DB payload strictly with pending payment defaults
-      const regPayload: Omit<RegistrationData, 'id'> & { payment_status?: string; confirmation_email_sent?: boolean } = {
-        passId: primaryPassId,
-        type: 'conference',
-        name: cleanName,
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
-        parish: formData.parish.trim(),
-        comments: formData.comments.trim(),
-        adultsCount: Math.max(0, adultsCount),
-        teensCount: Math.max(0, teensCount),
-        preteensCount: Math.max(0, preteensCount),
-        childrenCount: Math.max(0, childrenCount),
-        kidsCount: Math.max(0, kidsCount),
-        toddlersCount: Math.max(0, toddlersCount),
-        additionalAttendees: cleanAdditionalAttendees,
-        createdAt: new Date().toISOString(),
-        status: 'pending_payment',
-        paymentStatus: 'pending',
-        payment_status: 'pending',
-        confirmation_email_sent: false,
-        paymentAmount: totalAmount,
-        paymentReference: primaryPassId,
-      };
-
-      // Save draft to localStorage
+      // Save a draft locally while the user transitions to the payment step.
+      // A permanent Firestore registration row is created only after the payment attempt is initialized.
       const draftData = {
         formData: { ...formData, name: cleanName },
         adultsCount,
@@ -1076,12 +1061,6 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
       };
       localStorage.setItem(`draft_registration_${primaryPassId}`, JSON.stringify(draftData));
       localStorage.setItem('draft_registration_latest', JSON.stringify(draftData));
-
-      // Save to Firestore
-      const savedDocId = await saveRegistrationToFirestore(regPayload);
-      if (savedDocId && cleanAdditionalAttendees.length > 0) {
-        await syncAdditionalAttendeesToFirestore(savedDocId, regPayload, cleanAdditionalAttendees);
-      }
 
       setStatusMessage('Creating HitPay PayNow checkout session...');
 
@@ -1112,6 +1091,38 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
       }
       if (checkoutUrl) {
         setHitpayCheckoutUrl(checkoutUrl);
+      }
+
+      if (checkoutUrl || paymentRequestId) {
+        const regPayload: Omit<RegistrationData, 'id'> & { payment_status?: string; confirmation_email_sent?: boolean } = {
+          passId: primaryPassId,
+          type: 'conference',
+          name: cleanName,
+          email: formData.email.trim().toLowerCase(),
+          phone: formData.phone.trim(),
+          parish: formData.parish.trim(),
+          comments: formData.comments.trim(),
+          adultsCount: Math.max(0, adultsCount),
+          teensCount: Math.max(0, teensCount),
+          preteensCount: Math.max(0, preteensCount),
+          childrenCount: Math.max(0, childrenCount),
+          kidsCount: Math.max(0, kidsCount),
+          toddlersCount: Math.max(0, toddlersCount),
+          additionalAttendees: cleanAdditionalAttendees,
+          createdAt: new Date().toISOString(),
+          status: 'pending_payment',
+          paymentStatus: 'pending',
+          payment_status: 'pending',
+          confirmation_email_sent: false,
+          paymentAmount: totalAmount,
+          paymentReference: primaryPassId,
+          hitpayPaymentRequestId: paymentRequestId,
+        };
+
+        const savedDocId = await saveRegistrationToFirestore(regPayload);
+        if (savedDocId && cleanAdditionalAttendees.length > 0) {
+          await syncAdditionalAttendeesToFirestore(savedDocId, regPayload, cleanAdditionalAttendees);
+        }
       }
 
       // Save updated draft with hitpayCheckoutUrl and hitpayPaymentRequestId
