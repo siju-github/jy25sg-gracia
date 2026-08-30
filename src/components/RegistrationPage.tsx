@@ -16,7 +16,8 @@ import {
   updateRegistrationInFirestore, 
   findRegistrationByDetails, 
   syncAdditionalAttendeesToFirestore,
-  fetchRegistrationByPassIdOrDocId
+  fetchRegistrationByPassIdOrDocId,
+  checkExistingParticipantByContact
 } from '../lib/firebase';
 import { getBibleVersePassId, getPersonDeterministicSeed } from '../lib/bibleVerses';
 import { toProperCase } from '../lib/utils';
@@ -621,18 +622,31 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
           const hasCurrentMatch =
             (!!currentEmail && regEmail && regEmail === currentEmail) ||
-            (!!currentPhoneDigits && regPhoneDigits && regPhoneDigits === currentPhoneDigits) ||
-            (!currentEmail && !currentPhoneDigits && (reg.passId === targetRef || reg.id === targetRef));
+            (!!currentPhoneDigits && regPhoneDigits && regPhoneDigits === currentPhoneDigits);
 
-          if (!hasCurrentMatch) {
-            setExistingRecordLoaded(false);
-            setExistingRecordMsg(null);
-            setIsEditLocked(false);
-            setEditLockMsg(null);
-            setPreviouslyPaidAmount(0);
-            setPreviouslyPaidPax(0);
-            setPaymentStatus('idle');
-            return;
+          if (currentEmail || currentPhoneDigits) {
+            if (!hasCurrentMatch) {
+              setExistingRecordLoaded(false);
+              setExistingRecordMsg(null);
+              setIsEditLocked(false);
+              setEditLockMsg(null);
+              setPreviouslyPaidAmount(0);
+              setPreviouslyPaidPax(0);
+              setPaymentStatus('idle');
+              return;
+            }
+          } else {
+            const exactContactMatch = await checkExistingParticipantByContact(reg.email, reg.phone);
+            if (!exactContactMatch || !exactContactMatch.isFound) {
+              setExistingRecordLoaded(false);
+              setExistingRecordMsg(null);
+              setIsEditLocked(false);
+              setEditLockMsg(null);
+              setPreviouslyPaidAmount(0);
+              setPreviouslyPaidPax(0);
+              setPaymentStatus('idle');
+              return;
+            }
           }
 
           // Check cut-off date (25 Sep 2026)
