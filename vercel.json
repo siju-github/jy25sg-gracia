@@ -1,0 +1,58 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/(.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp))",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/generate-pkpass",
+      "destination": "/api/generate-pkpass"
+    },
+    {
+      "source": "/api/generate-reply",
+      "destination": "/api/generate-reply"
+    },
+    {
+      "source": "/api/send-confirmation-email",
+      "destination": "/api/send-confirmation-email"
+    },
+    {
+      "source": "/api/send-email",
+      "destination": "/api/send-email"
+    },
+    {
+      "source": "/api/create-payment",
+      "destination": "/api/create-payment"
+    },
+    {
+      "source": "/api/hitpay/:path*",
+      "destination": "/api/hitpay"
+    },
+    {
+      "source": "/api/hitpay",
+      "destination": "/api/hitpay"
+    },
+    {
+      "source": "/((?!api/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|css|js|json|xml|txt|pdf|woff|woff2)$).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

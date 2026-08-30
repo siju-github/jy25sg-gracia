@@ -1,0 +1,139 @@
+{
+  "entities": {
+    "Registration": {
+      "title": "Registration",
+      "description": "GRACIA Conference or Musical registration entry",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["conference", "musical"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "adultsCount": { "type": "number" },
+        "preteensCount": { "type": "number" },
+        "childrenCount": { "type": "number" },
+        "toddlersCount": { "type": "number" },
+        "comments": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string" },
+        "status": { "type": "string", "enum": ["confirmed", "cancelled"] }
+      },
+      "required": ["type", "name", "email", "phone", "adultsCount", "createdAt"]
+    },
+    "ApprovedAdmin": {
+      "title": "ApprovedAdmin",
+      "description": "Allow-listed admin email addresses for GRACIA management",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "approvedBy": { "type": "string" },
+        "dateApproved": { "type": "string" },
+        "status": { "type": "string", "enum": ["approved", "pending", "revoked"] }
+      },
+      "required": ["email", "status"]
+    },
+    "TimelineEvent": {
+      "title": "TimelineEvent",
+      "description": "Jubilee Moments 25-year history timeline item",
+      "type": "object",
+      "properties": {
+        "year": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "order": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["year", "title", "description", "order"]
+    },
+    "PrayerGroup": {
+      "title": "PrayerGroup",
+      "description": "Jesus Youth Singapore prayer group location and timing",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "area": { "type": "string" },
+        "meetingTime": { "type": "string" },
+        "contactPerson": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "order": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "area", "meetingTime"]
+    },
+    "SiteContent": {
+      "title": "SiteContent",
+      "description": "Dynamic site text and configuration settings",
+      "type": "object",
+      "properties": {
+        "aboutText": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "instagramUrl": { "type": "string" },
+        "facebookUrl": { "type": "string" },
+        "youtubeUrl": { "type": "string" },
+        "appsScriptUrl": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      }
+    },
+    "ContactMessage": {
+      "title": "ContactMessage",
+      "description": "User inquiries and support contact messages with reply history",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 5000 },
+        "status": { "type": "string", "enum": ["unread", "replied", "archived"] },
+        "createdAt": { "type": "string" },
+        "replies": { "type": "array" }
+      },
+      "required": ["name", "email", "message", "status", "createdAt"]
+    },
+    "BibleVerse": {
+      "title": "BibleVerse",
+      "description": "Scripture verse for conference pass IDs and delegate encouragement",
+      "type": "object",
+      "properties": {
+        "reference": { "type": "string" },
+        "text": { "type": "string" },
+        "category": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["reference", "text"]
+    }
+  },
+  "firestore": {
+    "/bible_verses/{verseId}": {
+      "schema": "BibleVerse",
+      "description": "Curated database of Bible verses used for conference Pass IDs (public read, admin write)"
+    },
+    "/contact_messages/{messageId}": {
+      "schema": "ContactMessage",
+      "description": "User support and inquiry messages (create public, read/update/delete admin only)"
+    },
+    "/registrations/{registrationId}": {
+      "schema": "Registration",
+      "description": "Public registration submissions (create public, read/update admin only)"
+    },
+    "/approved_admins/{adminId}": {
+      "schema": "ApprovedAdmin",
+      "description": "Admin allow-list configuration"
+    },
+    "/timeline_events/{eventId}": {
+      "schema": "TimelineEvent",
+      "description": "Jubilee moments timeline entries (public read, admin write)"
+    },
+    "/prayer_groups/{groupId}": {
+      "schema": "PrayerGroup",
+      "description": "Prayer group listings (public read, admin write)"
+    },
+    "/site_content/{contentId}": {
+      "schema": "SiteContent",
+      "description": "General site copy and settings (public read, admin write)"
+    },
+    "/audit_backups/{backupId}": {
+      "schema": "object",
+      "description": "Pre-wipe and bulk deletion audit backups"
+    }
+  }
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en" class="scroll-smooth">
+  <head>
+    <script>
+      (function() {
+        try {
+          var realFetch = window.fetch ? window.fetch.bind(window) : null;
+          var _fetch = realFetch;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _fetch;
+            },
+            set: function(v) {
+              _fetch = v;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {
+          // Ignore if property redefinition is restricted
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GRACIA 2026 | 25 Years of Grace in Singapore</title>
+
+    <!-- Favicons (Root public path) -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+
+    <!-- iOS Safari Add to Home Screen -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GRACIA" />
+
+    <!-- Android PWA Manifest & Theme -->
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#120924" />
+    <meta name="msapplication-TileColor" content="#120924" />
+
+    <!-- Open Graph / WhatsApp / Social Share Preview -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://gracia2026.vercel.app/" />
+    <meta property="og:title" content="GRACIA 2026 | 25 Years of Grace in Singapore" />
+    <meta property="og:description" content="Jubilee Conference (10–11 October 2026) at Caritas Agape Village. Faithful Witness. Joyful Missionary." />
+    <meta property="og:image" content="https://gracia2026.vercel.app/android-chrome-512x512.png" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta property="og:site_name" content="Jesus Youth Singapore" />
+
+    <!-- Twitter / X Card Preview -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="GRACIA 2026 | 25 Years of Grace in Singapore" />
+    <meta name="twitter:description" content="Jubilee Conference (10–11 October 2026) at Caritas Agape Village. Faithful Witness. Joyful Missionary." />
+    <meta name="twitter:image" content="https://gracia2026.vercel.app/android-chrome-512x512.png" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Anton&family=Dancing+Script:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,700;1,600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#1a0b22] text-[#FBF6EC] selection:bg-[#E8752C] selection:text-white font-sans antialiased overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

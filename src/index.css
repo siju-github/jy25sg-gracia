@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-plum-1: #1a0b22;
+    --bg-plum-2: #2c1140;
+    --bg-plum-3: #170a1f;
+    --brand-blue: #2242A6;
+    --brand-magenta: #C81E6E;
+    --brand-orange: #E8752C;
+    --brand-yellow: #E8B400;
+    --brand-red: #D62828;
+    --brand-purple: #6B2C91;
+    --card-cream: #FBF6EC;
+    --ink-dark: #241226;
+  }
+
+  body {
+    background: radial-gradient(circle at 50% 20%, var(--bg-plum-2) 0%, var(--bg-plum-1) 60%, var(--bg-plum-3) 100%);
+    background-attachment: fixed;
+    color: var(--card-cream);
+    font-family: 'Montserrat', 'Plus Jakarta Sans', sans-serif;
+  }
+
+  h1, h2, h3, .font-poster {
+    font-family: 'Anton', sans-serif;
+    letter-spacing: 0.04em;
+  }
+
+  .font-script {
+    font-family: 'Dancing Script', cursive;
+  }
+}
+
+/* Custom Signature 5-Color Gradient Sequences */
+.bg-signature-gradient {
+  background: linear-gradient(135deg, #2242A6 0%, #C81E6E 25%, #E8752C 50%, #E8B400 75%, #D62828 100%);
+}
+
+.bg-signature-animated {
+  background: linear-gradient(270deg, #2242A6, #C81E6E, #E8752C, #E8B400, #D62828, #2242A6);
+  background-size: 300% 300%;
+  animation: gradientSweep 8s ease infinite;
+}
+
+@keyframes gradientSweep {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.text-signature-gradient {
+  background: linear-gradient(135deg, #2242A6 0%, #C81E6E 25%, #E8752C 50%, #E8B400 75%, #D62828 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-signature-animated {
+  background: linear-gradient(270deg, #3B82F6, #EC4899, #F97316, #FBBF24, #EF4444, #3B82F6);
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: gradientSweep 8s ease infinite;
+}
+
+.border-signature-gradient {
+  border-image: linear-gradient(135deg, #2242A6, #C81E6E, #E8752C, #E8B400, #D62828) 1;
+}
+
+/* Glassmorphism Navigation */
+.glass-nav {
+  background: rgba(26, 11, 34, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Cream Paper Card */
+.cream-card {
+  background-color: #FBF6EC;
+  color: #241226;
+  border-radius: 1.25rem;
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(232, 180, 0, 0.2);
+}
+
+/* Glow Animation */
+.glow-pulse {
+  animation: glowPulse 2.5s infinite ease-in-out;
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(232, 117, 44, 0.5), 0 0 30px rgba(200, 30, 110, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(232, 180, 0, 0.8), 0 0 50px rgba(214, 40, 40, 0.5);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .bg-signature-animated, .text-signature-animated, .glow-pulse {
+    animation: none !important;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

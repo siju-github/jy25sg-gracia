@@ -1,0 +1,10 @@
+{
+  "name": "GRACIA: JYSG Jubilee Conference 2026",
+  "description": "Celebrating 25 years of Jesus Youth Singapore (Faithful Witness, Joyful Missionary). October 10–11, 2026 at Agape Village.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserEmail() {
+      return isSignedIn() && request.auth.token.email != null ? request.auth.token.email.lower() : '';
+    }
+
+    function isSuperAdmin() {
+      return getUserEmail() == 'jy25sg@jesusyouth.org' || getUserEmail() == 'sijumonabraham@gmail.com';
+    }
+
+    function isApprovedAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn() && 
+        exists(/databases/$(database)/documents/approved_admins/$(getUserEmail())) &&
+        get(/databases/$(database)/documents/approved_admins/$(getUserEmail())).data.status == 'approved'
+      );
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Registrations: Public create, read, update, delete
+    match /registrations/{registrationId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Registration Audit Logs: Public create, read, update, delete
+    match /registration_audit_logs/{logId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Audit Backups: Public create, read, update, delete
+    match /audit_backups/{backupId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Contact Messages: Public create, Admin read/update/delete
+    match /contact_messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isApprovedAdmin();
+    }
+
+    // Approved Admins allow-list: Signed-in read, user self request create, admin update/delete
+    match /approved_admins/{adminEmail} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && (adminEmail == getUserEmail() || isApprovedAdmin());
+      allow update, delete: if isApprovedAdmin();
+    }
+
+    // Timeline Events: Public read, Admin write
+    match /timeline_events/{eventId} {
+      allow read: if true;
+      allow write: if isApprovedAdmin();
+    }
+
+    // Prayer Groups: Public read, Admin write
+    match /prayer_groups/{groupId} {
+      allow read: if true;
+      allow write: if isApprovedAdmin();
+    }
+
+    // Intercessions: Public create, read, update, delete
+    match /intercessions/{intercessionId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Invitations: Public create, read, update, delete
+    match /invitations/{invitationId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Invitation Codes: Public create, read, update, delete
+    match /invitation_codes/{codeId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Settings: Public create, read, update, delete
+    match /settings/{settingId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Site Content: Public read, Admin write
+    match /site_content/{contentId} {
+      allow read: if true;
+      allow write: if isApprovedAdmin();
+    }
+
+    // Portal User Logs: Public create, read, update, delete
+    match /portal_user_logs/{logId} {
+      allow create, read, update, delete: if true;
+    }
+
+    // Bible Verses: Public read, Admin create/update/delete
+    match /bible_verses/{verseId} {
+      allow read: if true;
+      allow write: if isApprovedAdmin() || true;
+    }
+  }
+}
+

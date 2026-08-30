@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 650" fill="none">
+  <defs>
+    <!-- Dark Wood Frame Gradient -->
+    <linearGradient id="darkWood" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3D1D11" />
+      <stop offset="50%" stop-color="#281108" />
+      <stop offset="100%" stop-color="#1A0A04" />
+    </linearGradient>
+
+    <!-- Warm Honey/Gold Wood Body Gradient -->
+    <linearGradient id="goldWood" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EAA640" />
+      <stop offset="40%" stop-color="#D48B28" />
+      <stop offset="80%" stop-color="#B26C15" />
+      <stop offset="100%" stop-color="#8C4E0A" />
+    </linearGradient>
+
+    <!-- Medium Wood Shadow/Inlay Gradient -->
+    <linearGradient id="mediumWood" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#A25D18" />
+      <stop offset="100%" stop-color="#5C2E06" />
+    </linearGradient>
+
+    <!-- Base Wood Gradient -->
+    <linearGradient id="baseWood" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4A2515" />
+      <stop offset="50%" stop-color="#2D1409" />
+      <stop offset="100%" stop-color="#1B0903" />
+    </linearGradient>
+
+    <!-- Subtle Drop Shadow for 3D Carving depth -->
+    <filter id="carveShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="2" dy="4" stdDeviation="3" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#carveShadow)">
+    <!-- 1. Circular Stand / Pedestal Base -->
+    <!-- Lower Oval Base -->
+    <ellipse cx="250" cy="580" rx="100" ry="28" fill="url(#baseWood)" stroke="#110502" stroke-width="3"/>
+    <ellipse cx="250" cy="574" rx="94" ry="22" fill="url(#darkWood)"/>
+    <ellipse cx="250" cy="566" rx="80" ry="16" fill="url(#baseWood)"/>
+    <!-- Stem Connecting Base to Body -->
+    <path d="M 238 560 L 238 520 L 262 520 L 262 560 Z" fill="url(#darkWood)"/>
+
+    <!-- 2. Dark Outer Wooden Frame of the Cross/Figure -->
+    <path d="
+      M 250 520
+      C 220 500 200 450 190 380
+      C 180 310 160 200 80 80
+      C 70 65 85 50 100 60
+      C 180 120 215 155 235 170
+      C 240 140 230 110 230 80
+      C 230 50 240 40 250 40
+      C 260 40 270 50 270 80
+      C 270 110 260 140 265 170
+      C 285 155 320 120 400 60
+      C 415 50 430 65 420 80
+      C 340 200 320 310 310 380
+      C 300 450 280 500 250 520 Z
+    " fill="url(#darkWood)" stroke="#110502" stroke-width="2"/>
+
+    <!-- 3. Halo Behind Jesus' Head -->
+    <circle cx="250" cy="115" r="38" fill="none" stroke="url(#goldWood)" stroke-width="12"/>
+    <circle cx="250" cy="115" r="44" fill="none" stroke="url(#darkWood)" stroke-width="4"/>
+
+    <!-- 4. Inner Golden/Honey Wooden Body of Christ (Outstretched Arms & Robe) -->
+    <path d="
+      M 250 505
+      C 228 488 210 440 202 375
+      C 192 305 174 200 98 90
+      C 93 83 100 75 108 80
+      C 180 132 215 168 238 185
+      L 242 125
+      C 238 115 236 100 240 90
+      C 244 80 256 80 260 90
+      C 264 100 262 115 258 125
+      L 262 185
+      C 285 168 320 132 392 80
+      C 400 75 407 83 402 90
+      C 326 200 308 305 298 375
+      C 290 440 272 488 250 505 Z
+    " fill="url(#goldWood)"/>
+
+    <!-- 5. Carved Face, Hair & Beard Details -->
+    <!-- Head/Face Oval -->
+    <ellipse cx="250" cy="110" rx="14" ry="18" fill="#D48B28"/>
+    <!-- Hair & Beard (Darker Inlay) -->
+    <path d="M 236 102 C 236 90 264 90 264 102 C 266 115 262 128 250 130 C 238 128 234 115 236 102 Z" fill="url(#mediumWood)" opacity="0.9"/>
+    <!-- Face Highlights -->
+    <ellipse cx="250" cy="110" rx="10" ry="13" fill="#EAA640"/>
+
+    <!-- 6. Outstretched Hands (Raised Upwards at ends of arms) -->
+    <!-- Left Hand -->
+    <path d="M 98 90 C 90 80 102 70 114 78 C 118 86 110 96 98 90 Z" fill="url(#goldWood)"/>
+    <!-- Right Hand -->
+    <path d="M 402 90 C 410 80 398 70 386 78 C 382 86 390 96 402 90 Z" fill="url(#goldWood)"/>
+
+    <!-- 7. Sculpted Drapery / Fold Lines on Body & Arms (Carved Wood Texture) -->
+    <path d="M 250 185 C 240 250 235 340 220 480" stroke="url(#mediumWood)" stroke-width="3" fill="none" stroke-linecap="round"/>
+    <path d="M 255 190 C 262 260 268 350 275 470" stroke="url(#mediumWood)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M 245 220 C 230 280 225 350 235 420" stroke="url(#mediumWood)" stroke-width="2" fill="none" opacity="0.7"/>
+
+    <!-- Arm Muscle & Sleeve Folds -->
+    <path d="M 120 100 C 170 140 210 165 235 180" stroke="url(#mediumWood)" stroke-width="3" fill="none" opacity="0.8"/>
+    <path d="M 380 100 C 330 140 290 165 265 180" stroke="url(#mediumWood)" stroke-width="3" fill="none" opacity="0.8"/>
+    <path d="M 140 120 C 180 150 215 172 230 185" stroke="url(#mediumWood)" stroke-width="2" fill="none" opacity="0.6"/>
+    <path d="M 360 120 C 320 150 285 172 270 185" stroke="url(#mediumWood)" stroke-width="2" fill="none" opacity="0.6"/>
+  </g>
+</svg>

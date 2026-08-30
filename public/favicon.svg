@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" fill="none">
+  <defs>
+    <!-- Top Swirl Ribbon: Magenta -> Red -> Orange -> Indigo -->
+    <linearGradient id="jubilee-top-swirl" x1="120" y1="400" x2="480" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C22367" />
+      <stop offset="30%" stop-color="#E0362C" />
+      <stop offset="65%" stop-color="#F06B24" />
+      <stop offset="90%" stop-color="#2D2882" />
+    </linearGradient>
+
+    <!-- Indigo Torso & Diagonal Body -->
+    <linearGradient id="jubilee-indigo-body" x1="100" y1="750" x2="650" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2D2882" />
+      <stop offset="100%" stop-color="#322989" />
+    </linearGradient>
+
+    <!-- Under-arm Magenta Crescent Accent -->
+    <linearGradient id="jubilee-magenta-arm" x1="560" y1="360" x2="860" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B8206C" />
+      <stop offset="100%" stop-color="#8E1658" />
+    </linearGradient>
+
+    <!-- Purple Base Gradient for bottom of 2 -->
+    <linearGradient id="jubilee-purple-base" x1="90" y1="750" x2="510" y2="750" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7B1A80" />
+      <stop offset="60%" stop-color="#8C1C82" />
+      <stop offset="100%" stop-color="#2D2882" />
+    </linearGradient>
+
+    <!-- Purple Loop of 5 -->
+    <linearGradient id="jubilee-purple-5" x1="390" y1="520" x2="850" y2="980" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6E177C" />
+      <stop offset="50%" stop-color="#55126B" />
+      <stop offset="100%" stop-color="#440E5E" />
+    </linearGradient>
+  </defs>
+
+  <!-- 1. Red Head Circle (Top Right) -->
+  <circle cx="635" cy="155" r="56" fill="#D3252B" />
+
+  <!-- 2. Outstretched Right Arm (Indigo Body) -->
+  <path d="M 490 265 C 560 165 710 225 860 248 C 735 375 585 365 490 265 Z" fill="url(#jubilee-indigo-body)" />
+
+  <!-- 3. Under-Arm Magenta Highlight Wing -->
+  <path d="M 575 350 C 685 385 795 315 860 248 C 760 370 630 380 575 350 Z" fill="url(#jubilee-magenta-arm)" />
+
+  <!-- 4. Main Diagonal Body and Base of 2 (Seamless Indigo & Purple) -->
+  <path d="M 530 80 L 510 750 L 90 750 Z" fill="url(#jubilee-indigo-body)" />
+  <path d="M 90 750 L 510 750 L 260 630 C 180 670 120 720 90 750 Z" fill="url(#jubilee-purple-base)" />
+
+  <!-- 5. Top Ribbon Loop of "2" with Hollow Center (EvenOdd fill rule) -->
+  <path fill-rule="evenodd" fill="url(#jubilee-top-swirl)" d="
+    M 90 750
+    C 180 570 380 300 440 230
+    C 480 170 420 60 320 60
+    C 180 60 115 170 125 290
+    C 132 365 185 400 250 400
+    C 300 400 320 360 290 330
+    C 260 300 200 310 190 260
+    C 180 190 230 115 320 115
+    C 390 115 425 175 390 260
+    C 345 370 195 590 90 750 Z
+  " />
+
+  <!-- 6. Bottom Purple Loop of "5" with Hollow Center (EvenOdd fill rule) -->
+  <path fill-rule="evenodd" fill="url(#jubilee-purple-5)" d="
+    M 510 520
+    C 600 495 750 505 825 610
+    C 905 720 865 905 715 955
+    C 560 1005 410 950 395 810
+    C 385 730 440 720 475 740
+    C 505 755 490 800 460 800
+    C 440 800 450 890 560 920
+    C 670 950 780 860 800 750
+    C 820 625 730 555 620 555
+    C 560 555 525 615 510 750
+    L 90 750
+    L 510 520 Z
+  " />
+</svg>
