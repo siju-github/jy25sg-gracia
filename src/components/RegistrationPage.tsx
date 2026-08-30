@@ -247,6 +247,32 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
   };
 
   // Reset form to completely fresh / blank state and purge stale client-side caches
+  const normalizePhoneDigits = useCallback((value?: string) => (value || '').replace(/\D/g, ''), []);
+
+  const hasExactContactMatch = useCallback((record: RegistrationData | null, email?: string, phone?: string): boolean => {
+    if (!record) return false;
+    const inputEmail = (email || '').trim().toLowerCase();
+    const inputPhone = normalizePhoneDigits(phone || '');
+
+    const recordEmail = (record.email || '').trim().toLowerCase();
+    const recordPhone = normalizePhoneDigits(record.phone || '');
+
+    const emailMatches = Boolean(inputEmail && recordEmail && inputEmail === recordEmail);
+    const phoneMatches = Boolean(inputPhone && recordPhone && inputPhone.length >= 8 && inputPhone === recordPhone);
+
+    if (emailMatches || phoneMatches) return true;
+
+    const additionalMatches = (record.additionalAttendees || []).some((attendee) => {
+      const attendeeEmail = (attendee.email || '').trim().toLowerCase();
+      const attendeePhone = normalizePhoneDigits(attendee.phone || '');
+      const attendeeEmailMatches = Boolean(inputEmail && attendeeEmail && inputEmail === attendeeEmail);
+      const attendeePhoneMatches = Boolean(inputPhone && attendeePhone && inputPhone.length >= 8 && inputPhone === attendeePhone);
+      return attendeeEmailMatches || attendeePhoneMatches;
+    });
+
+    return additionalMatches;
+  }, [normalizePhoneDigits]);
+
   const resetToFreshFormState = useCallback(() => {
     try {
       localStorage.clear();
@@ -319,19 +345,19 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
     setIsCheckingExisting(true);
     try {
-      // Query STRICTLY against live database table (which filters out soft-deleted/inactive rows)
+      // Query STRICTLY against live database table and only show the banner when the newly typed email/phone matches an exact record.
       const reg = await findRegistrationByDetails('conference', hasValidEmail ? cleanEmail : '', '', hasValidPhone ? cleanPhone : '');
       if (reg) {
         const regId = reg.passId || reg.id;
         const regEmail = (reg.email || '').trim().toLowerCase();
-        const regPhone = (reg.phone || '').replace(/\D/g, '');
-        const normCleanPhone = cleanPhone.replace(/\D/g, '');
+        const regPhone = normalizePhoneDigits(reg.phone || '');
+        const normCleanPhone = normalizePhoneDigits(cleanPhone);
 
-        // Verify if newly typed input actually matches the database record
+        // Verify if newly typed input actually matches the database record exactly.
         const matchesEmail = hasValidEmail && regEmail === cleanEmail;
         const matchesPhone = hasValidPhone && normCleanPhone.length >= 8 && regPhone === normCleanPhone;
 
-        if (!matchesEmail && !matchesPhone) {
+        if (!matchesEmail && !matchesPhone && !hasExactContactMatch(reg, cleanEmail, cleanPhone)) {
           if (existingRecordLoaded || existingRecordMsg) {
             setExistingRecordLoaded(false);
             setExistingRecordMsg(null);
@@ -620,9 +646,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
           const regEmail = (reg.email || '').trim().toLowerCase();
           const regPhoneDigits = (reg.phone || '').replace(/\D/g, '');
 
-          const hasCurrentMatch =
-            (!!currentEmail && regEmail && regEmail === currentEmail) ||
-            (!!currentPhoneDigits && regPhoneDigits && regPhoneDigits === currentPhoneDigits);
+          const hasCurrentMatch = hasExactContactMatch(reg, currentEmail, currentPhoneDigits ? currentPhoneDigits : undefined);
 
           if (currentEmail || currentPhoneDigits) {
             if (!hasCurrentMatch) {
@@ -637,7 +661,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
             }
           } else {
             const exactContactMatch = await checkExistingParticipantByContact(reg.email, reg.phone);
-            if (!exactContactMatch || !exactContactMatch.isFound) {
+            if (!exactContactMatch || !exactContactMatch.isFound || !hasExactContactMatch(reg, reg.email, reg.phone)) {
               setExistingRecordLoaded(false);
               setExistingRecordMsg(null);
               setIsEditLocked(false);
