@@ -89,7 +89,80 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
   const [hitpayPaymentRequestId, setHitpayPaymentRequestId] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'pending' | 'succeeded' | 'failed'>('idle');
   const [isEmailSent, setIsEmailSent] = useState<boolean>(false);
+  const [isResendingEmail, setIsResendingEmail] = useState<boolean>(false);
+  const [resendNotification, setResendNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Resend confirmation emails to primary registrant and all group attendees
+  const handleResendEmails = async () => {
+    if (isResendingEmail) return;
+    setIsResendingEmail(true);
+    setResendNotification(null);
+
+    const cleanName = toProperCase(formData.name || displayName || 'Delegate');
+    const cleanAttendees = (additionalAttendees || []).map((a, idx) => ({
+      ...a,
+      name: toProperCase(a.name || `Delegate Member ${idx + 1}`),
+      email: (a.email || '').trim().toLowerCase(),
+      category: a.category || 'adult',
+      categoryLabel: a.categoryLabel || a.category || 'Delegate Member'
+    }));
+
+    const refKey = refNumber || initialParams.ref || displayRef || `GRACIA-${Date.now()}`;
+
+    const paymentEmailPayload = {
+      passId: refKey,
+      name: cleanName,
+      email: formData.email,
+      phone: formData.phone,
+      parish: formData.parish,
+      adultsCount,
+      teensCount,
+      preteensCount,
+      childrenCount,
+      kidsCount,
+      toddlersCount,
+      additionalAttendees: cleanAttendees,
+      amountToCharge: totalAmount > 0 ? totalAmount : 25,
+      type: 'conference',
+      isUpdate: true,
+      isResend: true,
+      force: true
+    };
+
+    try {
+      const res = await dispatchConfirmationEmails(
+        refKey,
+        formData.email,
+        cleanAttendees,
+        paymentEmailPayload,
+        { isUpdate: true, isResend: true }
+      );
+
+      if (res.success) {
+        const recipientList = [formData.email, ...cleanAttendees.map(a => a.email).filter(Boolean)];
+        const uniqueRecipients = Array.from(new Set(recipientList));
+        const recipientStr = uniqueRecipients.length > 0 ? uniqueRecipients.join(', ') : formData.email;
+        
+        setResendNotification({
+          type: 'success',
+          message: `Digital pass email(s) successfully re-sent to: ${recipientStr}`
+        });
+      } else {
+        setResendNotification({
+          type: 'error',
+          message: res.error || 'Failed to resend confirmation emails. Please try again or contact support.'
+        });
+      }
+    } catch (err: any) {
+      setResendNotification({
+        type: 'error',
+        message: err?.message || 'Network error occurred while sending emails.'
+      });
+    } finally {
+      setIsResendingEmail(false);
+    }
+  };
   const [isVerifyingPayment, setIsVerifyingPayment] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
@@ -158,6 +231,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
   const [existingRecordLoaded, setExistingRecordLoaded] = useState<boolean>(false);
   const [existingRecordMsg, setExistingRecordMsg] = useState<string | null>(null);
   const [isEditLocked, setIsEditLocked] = useState<boolean>(false);
+  const [useDiscountedRate, setUseDiscountedRate] = useState<boolean>(true);
   const [editLockMsg, setEditLockMsg] = useState<string | null>(null);
   const [previouslyPaidAmount, setPreviouslyPaidAmount] = useState<number>(0);
   const [previouslyPaidPax, setPreviouslyPaidPax] = useState<number>(0);
@@ -327,7 +401,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
           if (typeof record.loveOffering === 'number' && record.loveOffering > 0) return record.loveOffering;
           const payingPax = ((record.adultsCount || 0) + (record.teensCount || 0));
           if (payingPax >= 4) return 100;
-          return Math.max(25, payingPax * 25);
+          return Math.max(0, payingPax * 25);
         };
 
         const paidAmt = isPaidConfirmed ? getRecordPaidAmount(reg) : 0;
@@ -346,7 +420,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
           setExistingRecordMsg(`Existing registration found for ${toProperCase(reg.name || '') || reg.email || reg.phone} with PENDING PAYMENT. Please complete the love offering payment.`);
         } else {
           setPaymentStatus('succeeded');
-          setExistingRecordMsg(`Existing confirmed registration found for ${toProperCase(reg.name || '') || reg.email || reg.phone}. You are already registered and your pass is verified!`);
+          setExistingRecordMsg(`Existing confirmed registration record loaded for ${toProperCase(reg.name || '') || reg.email || reg.phone}. You are already registered with $${paidAmt}.00 paid credit!`);
         }
       } else {
         // If database query returns null (record is deleted or does not exist),
@@ -452,12 +526,17 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
   }, []);
 
   // Calculate pricing
+  const payingPax = (adultsCount || 0) + (teensCount || 0);
+  const actualFullLoveOffering = payingPax * 150;
+
   const calculateTotalFee = () => {
-    const payingPax = (adultsCount || 0) + (teensCount || 0);
     if (payingPax <= 0) return 0;
-    // Family cap: $100 if payingPax >= 4
-    if (payingPax >= 4) return 100;
-    return payingPax * 25;
+    if (useDiscountedRate) {
+      // Family cap: $100 if payingPax >= 4
+      if (payingPax >= 4) return 100;
+      return payingPax * 25;
+    }
+    return actualFullLoveOffering;
   };
 
   const currentTotalFee = calculateTotalFee();
@@ -895,6 +974,25 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
       // If already registered and confirmed, and no additional payment is required ($0 due), redirect straight to Step 3 digital pass!
       if (isAlreadyConfirmed && amountToCharge <= 0) {
+        // Save any updated participant details to Firestore
+        updateRegistrationInFirestore(referenceNumber, {
+          name: cleanName,
+          email: formData.email.trim().toLowerCase(),
+          phone: formData.phone.trim(),
+          parish: formData.parish.trim(),
+          comments: formData.comments.trim(),
+          adultsCount: Math.max(0, adultsCount),
+          teensCount: Math.max(0, teensCount),
+          preteensCount: Math.max(0, preteensCount),
+          childrenCount: Math.max(0, childrenCount),
+          kidsCount: Math.max(0, kidsCount),
+          toddlersCount: Math.max(0, toddlersCount),
+          additionalAttendees: cleanAdditionalAttendees,
+          status: 'confirmed',
+          paymentStatus: 'paid',
+          paymentAmount: previouslyPaidAmount > 0 ? previouslyPaidAmount : currentTotalFee
+        }).catch(err => console.warn('Error saving updated registration details:', err));
+
         const passes = generatePassesForGroup(cleanName, formData.email, formData.phone, formData.parish, referenceNumber, cleanAdditionalAttendees);
         setAllPasses(passes);
         setActiveStep(3);
@@ -1111,7 +1209,7 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
   return (
     <div className="min-h-screen bg-[#0A0514] text-white py-8 px-4 sm:px-6 lg:px-8">
-      <div ref={containerRef} className="max-w-4xl mx-auto">
+      <div ref={containerRef} className="max-w-7xl mx-auto">
         
         {/* HEADER BRANDING BANNER */}
         <div className="text-center mb-8 space-y-3">
@@ -1156,7 +1254,11 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
 
         {/* ==================== STEP 1: ATTENDEE DETAILS ==================== */}
         {activeStep === 1 && (
-          <form onSubmit={handleProceedToStep2} className="bg-[#130720]/95 rounded-3xl p-6 sm:p-8 border-2 border-amber-500/40 shadow-2xl space-y-6">
+          <form onSubmit={handleProceedToStep2} className="bg-[#130720]/95 rounded-3xl p-6 lg:p-8 border-2 border-amber-500/40 shadow-2xl">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              
+              {/* LEFT COLUMN: FORM INPUTS & ATTENDEE SELECTION */}
+              <div className="lg:col-span-7 space-y-6">
             
             {/* EDIT LOCK BANNER (If cut-off date 25 Sep 2026 passed) */}
             {isEditLocked && (
@@ -1552,112 +1654,146 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
             </div>
             {formErrors.pdpaConsent && <p className="text-xs text-red-400">{formErrors.pdpaConsent}</p>}
 
-            {/* TOTAL FEE SUMMARY & SUBMIT */}
-            <div className="bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-amber-500/20 p-5 rounded-2xl border border-amber-400/40 flex flex-col sm:flex-row items-center justify-between gap-4">
-              {isAlreadyConfirmed && amountToCharge <= 0 ? (
-                <div className="w-full flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-7 h-7 text-emerald-400 shrink-0 mt-0.5" />
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-emerald-300 uppercase tracking-wider bg-emerald-950/90 px-3 py-0.5 rounded-full border border-emerald-500/50">
-                          Already Registered &amp; Confirmed
-                        </span>
-                        {previouslyPaidAmount > 0 && (
-                          <span className="text-xs font-mono font-bold text-emerald-400">
-                            (${previouslyPaidAmount}.00 SGD Paid)
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-emerald-100 font-medium leading-relaxed">
-                        A confirmed registration record already exists for <strong className="text-white font-extrabold">{toProperCase(formData.name || displayName)}</strong> ({formData.email}). Your digital pass is active. You do not need to pay again.
-                      </p>
+            </div>
+
+              {/* RIGHT COLUMN: STICKY LIVE SUMMARY & LOVE OFFERING CARD */}
+              <div className="lg:col-span-5 lg:sticky lg:top-6 space-y-4">
+                
+                <div className="bg-gradient-to-br from-[#1E0D33] via-[#170928] to-[#0F041A] p-6 rounded-3xl border-2 border-amber-500/40 shadow-2xl space-y-5">
+                  
+                  {/* Minimal Header & Total Amount Display */}
+                  <div className="text-center space-y-2 pb-3 border-b border-amber-500/20">
+                    <span className="text-xs font-bold text-amber-300 uppercase tracking-wider block">
+                      Total Love Offering
+                    </span>
+                    <div className="flex items-baseline justify-center gap-1.5">
+                      <span className="text-4xl font-black text-amber-300 font-mono tracking-tight">
+                        ${existingRecordLoaded && previouslyPaidAmount > 0 ? amountToCharge : totalAmount}.00
+                      </span>
+                      <span className="text-xs font-bold text-amber-200/80">SGD</span>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const activeRef = refNumber || formData.email;
-                      const cleanName = toProperCase(formData.name || displayName);
-                      const cleanAttendees = (additionalAttendees || []).map(a => ({ ...a, name: toProperCase(a.name) }));
-                      const passes = generatePassesForGroup(cleanName, formData.email, formData.phone, formData.parish, activeRef, cleanAttendees);
-                      setAllPasses(passes);
-                      setActiveStep(3);
-                      updateUrl(3, activeRef);
-                    }}
-                    className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:opacity-90 text-slate-950 font-black text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-xl transition-all cursor-pointer shrink-0"
-                  >
-                    <CheckCircle2 className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-                    <span>View Your Digital Pass &amp; Confirmation</span>
-                    <ArrowRight className="w-4 h-4 text-slate-950 stroke-[2.5]" />
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <div className="space-y-1">
-                    <span className="text-xs font-bold text-amber-200 uppercase tracking-wider block">Registration Love Offering Summary:</span>
-                    
-                    {existingRecordLoaded && previouslyPaidAmount > 0 ? (
-                      <div className="space-y-1">
-                        <div className="text-xs text-gray-300 flex items-center gap-2">
-                          <span>Previously Paid:</span>
-                          <span className="font-mono font-bold text-emerald-400">${previouslyPaidAmount}.00 SGD</span>
-                        </div>
-                        <div className="text-xs text-gray-300 flex items-center gap-2">
-                          <span>Updated Total Love Offering:</span>
-                          <span className="font-mono font-bold text-amber-300">${currentTotalFee}.00 SGD</span>
-                        </div>
-                        <div className="flex items-baseline gap-2 pt-1 border-t border-amber-500/20">
-                          <span className="text-xs font-extrabold text-amber-200 uppercase">Additional Amount Due:</span>
-                          <span className="text-2xl font-black text-amber-300 font-mono">${amountToCharge}.00 SGD</span>
-                        </div>
-                        {isParticipantReduced && (
-                          <p className="text-[11px] text-amber-300 font-medium flex items-center gap-1.5 mt-1 bg-amber-950/80 p-2 rounded-lg border border-amber-500/30">
-                            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                            <span>Note: Participant count reduced from previously paid amount (${previouslyPaidAmount}.00 SGD). No refund will be issued.</span>
-                          </p>
-                        )}
-                        {isParticipantAdded && (
-                          <p className="text-[11px] text-emerald-300 font-medium flex items-center gap-1.5 mt-1 bg-emerald-950/80 p-2 rounded-lg border border-emerald-500/30">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                            <span>Additional participant added! You will only be charged the difference of +${amountToCharge}.00 SGD.</span>
-                          </p>
-                        )}
+                  {/* Minimal Checkbox Option */}
+                  <label htmlFor="useDiscountedRate_sticky" className="flex items-start gap-3 bg-[#170828] border border-amber-500/30 p-3.5 rounded-2xl cursor-pointer hover:border-amber-400/60 transition-colors">
+                    <input
+                      type="checkbox"
+                      id="useDiscountedRate_sticky"
+                      checked={useDiscountedRate}
+                      onChange={(e) => setUseDiscountedRate(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded text-amber-500 focus:ring-amber-400 cursor-pointer shrink-0"
+                    />
+                    <div className="text-xs text-amber-100 font-medium leading-relaxed">
+                      <span>Apply subsidized rate (<strong className="text-amber-300 font-bold">$25/person capped at $100/family</strong>)</span>
+                      <span className="block text-[11px] text-amber-200/60 mt-0.5">
+                        Actual amount: ${actualFullLoveOffering}.00 SGD ($150/person)
+                      </span>
+                    </div>
+                  </label>
+
+                  {/* PREVIOUSLY PAID CREDIT BREAKDOWN CARD */}
+                  {existingRecordLoaded && previouslyPaidAmount > 0 && (
+                    <div className="bg-[#170828] border border-amber-500/30 p-3.5 rounded-2xl text-xs space-y-2 font-mono">
+                      <div className="flex justify-between text-amber-200/80">
+                        <span>Standard Total Fee ({payingPax} pax):</span>
+                        <span>${currentTotalFee}.00</span>
                       </div>
-                    ) : (
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-3xl font-black text-amber-300 font-mono">${totalAmount}.00 SGD</span>
-                        {adultsCount + teensCount >= 4 && (
-                          <span className="text-xs text-emerald-400 font-bold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-500/40">
-                            Family Capped Max $100
+                      <div className="flex justify-between text-emerald-400 font-bold">
+                        <span>Previously Paid Credit:</span>
+                        <span>-${previouslyPaidAmount}.00</span>
+                      </div>
+                      <div className="flex justify-between text-amber-300 font-extrabold border-t border-amber-500/20 pt-1.5 text-sm">
+                        <span>Net Amount Due Now:</span>
+                        <span>${amountToCharge}.00</span>
+                      </div>
+                      {isParticipantReduced && (
+                        <p className="text-[11px] text-amber-200/70 font-sans italic pt-1 leading-normal">
+                          * Participant count reduced: As per event policy, no refunds are issued. $0.00 due now.
+                        </p>
+                      )}
+                      {isParticipantAdded && (
+                        <p className="text-[11px] text-emerald-300 font-sans italic pt-1 leading-normal">
+                          * New participant(s) added: Only the net difference (${amountToCharge}.00) is charged.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions / Submit Button */}
+                  {isAlreadyConfirmed && amountToCharge <= 0 ? (
+                    <div className="bg-emerald-950/90 border border-emerald-500/60 p-4 rounded-2xl space-y-3 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                        <span className="text-xs font-black text-emerald-300 uppercase tracking-wider">
+                          Confirmed &amp; Paid Registration Exists
+                        </span>
+                      </div>
+                      <p className="text-xs text-emerald-100 font-medium">
+                        Registration confirmed for {toProperCase(formData.name || displayName)}. Paid credit of ${previouslyPaidAmount}.00 applied ($0.00 due).
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const activeRef = refNumber || formData.email;
+                          const cleanName = toProperCase(formData.name || displayName);
+                          const cleanAttendees = (additionalAttendees || []).map(a => ({ ...a, name: toProperCase(a.name) }));
+                          updateRegistrationInFirestore(activeRef, {
+                            name: cleanName,
+                            email: formData.email.trim().toLowerCase(),
+                            phone: formData.phone.trim(),
+                            parish: formData.parish.trim(),
+                            comments: formData.comments.trim(),
+                            adultsCount: Math.max(0, adultsCount),
+                            teensCount: Math.max(0, teensCount),
+                            preteensCount: Math.max(0, preteensCount),
+                            childrenCount: Math.max(0, childrenCount),
+                            kidsCount: Math.max(0, kidsCount),
+                            toddlersCount: Math.max(0, toddlersCount),
+                            additionalAttendees: cleanAttendees,
+                            status: 'confirmed',
+                            paymentStatus: 'paid'
+                          }).catch(e => console.warn(e));
+
+                          const passes = generatePassesForGroup(cleanName, formData.email, formData.phone, formData.parish, activeRef, cleanAttendees);
+                          setAllPasses(passes);
+                          setActiveStep(3);
+                          updateUrl(3, activeRef);
+                        }}
+                        className="w-full px-4 py-3 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs tracking-wider uppercase flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-4 h-4 text-slate-950" />
+                        <span>Save Edits &amp; View Passes</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full py-4 rounded-2xl bg-signature-gradient hover:opacity-95 text-white font-extrabold text-xs tracking-widest uppercase flex items-center justify-center gap-2 shadow-2xl transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Processing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>
+                            {isParticipantAdded && amountToCharge > 0
+                              ? `Proceed to Pay Difference ($${amountToCharge}.00 SGD)`
+                              : 'Proceed to Payment Checkout'}
                           </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                          <ArrowRight className="w-4 h-4" />
+                        </>
+                      )}
+                    </button>
+                  )}
 
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-signature-gradient hover:opacity-90 text-white font-extrabold text-sm tracking-wider uppercase flex items-center justify-center gap-2 shadow-lg transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Proceed to Payment Checkout</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </>
-              )}
+                </div>
+
+              </div>
+
             </div>
-
           </form>
         )}
 
@@ -1707,14 +1843,18 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
                 initialCheckoutUrl={hitpayCheckoutUrl}
                 initialPaymentRequestId={hitpayPaymentRequestId}
                 additionalAttendees={additionalAttendees}
-                onPaymentCompleted={() => {
+                onPaymentCompleted={(details) => {
                   setPaymentStatus('succeeded');
                   const activeRef = displayRef || refNumber;
                   if (activeRef) {
+                    const cumulativePaid = (previouslyPaidAmount || 0) + (amountToCharge > 0 ? amountToCharge : (totalAmount > 0 ? totalAmount : 25));
                     updateRegistrationInFirestore(activeRef, {
                       status: 'confirmed',
                       paymentStatus: 'verified',
-                      paymentAmount: totalAmount > 0 ? totalAmount : 25,
+                      paymentAmount: cumulativePaid,
+                      hitpayChargeId: details?.hitpayChargeId || details?.paymentRequestId,
+                      hitpayPaymentRequestId: details?.paymentRequestId,
+                      hitpayResponse: details?.hitpayResponse,
                       email_sent: true,
                       confirmation_email_sent: true
                     }).catch(err => console.warn('Payment update warning:', err));
@@ -1821,6 +1961,55 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
                   Pass ID: {displayRef}
                 </div>
               )}
+
+              {/* RESEND EMAIL BUTTON & FEEDBACK */}
+              <div className="pt-3 flex flex-col items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResendEmails}
+                  disabled={isResendingEmail}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-extrabold text-xs uppercase tracking-wider transition-all duration-200 shadow-lg hover:shadow-amber-500/30 border border-amber-300 disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                  title="Send digital pass confirmation email to primary registrant and all group attendees"
+                >
+                  {isResendingEmail ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-slate-950" />
+                      <span>Sending Email to All Attendees...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-4 h-4 text-slate-950" />
+                      <span>Send Email Again</span>
+                    </>
+                  )}
+                </button>
+
+                <p className="text-[11px] text-emerald-200/80 max-w-md">
+                  Clicking above will re-send digital passes to primary registrant (<span className="font-semibold text-white">{formData.email}</span>) and all {additionalAttendees.length} family/group attendee(s).
+                </p>
+
+                {resendNotification && (
+                  <div className={`mt-2 p-3.5 rounded-xl border text-xs max-w-md w-full text-left transition-all animate-fadeIn ${
+                    resendNotification.type === 'success'
+                      ? 'bg-emerald-900/95 border-emerald-400 text-emerald-100 shadow-xl'
+                      : 'bg-rose-950/95 border-rose-500 text-rose-200 shadow-xl'
+                  }`}>
+                    <div className="flex items-start gap-2.5">
+                      {resendNotification.type === 'success' ? (
+                        <CheckCircle2 className="w-4.5 h-4.5 text-emerald-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <AlertCircle className="w-4.5 h-4.5 text-rose-400 shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1 space-y-0.5">
+                        <span className="font-bold block text-xs uppercase tracking-wider">
+                          {resendNotification.type === 'success' ? 'Email Dispatched Successfully' : 'Dispatch Failed'}
+                        </span>
+                        <p className="text-[11px] leading-relaxed opacity-95">{resendNotification.message}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* SUMMARY OF REGISTERED ATTENDEES */}

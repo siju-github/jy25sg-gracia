@@ -164,7 +164,9 @@ export const INITIAL_SITE_CONTENT: SiteContentData = {
   hiddenPages: [],
   enableGoogleLogin: true,
   enablePassIdLogin: false,
-  enableEmailLogin: false
+  enableEmailLogin: false,
+  enableEmailCodeLogin: true,
+  googleLoginSuperAdminOnly: false
 };
 
 export const APPS_SCRIPT_TEMPLATE = `/**

@@ -107,40 +107,17 @@ export async function generateServerPdfPassBuffer(data: ServerPdfPassData): Prom
     });
   }
 
-  return new Promise(async (resolve, reject) => {
-    let isSettled = false;
-    const timer = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        reject(new Error('PDF generation timed out after 5000ms'));
-      }
-    }, 5000);
+  const doc = new PDFDocument({ margin: 30, size: 'A4' });
+  const chunks: Buffer[] = [];
 
-    const safeResolve = (buf: Buffer) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        resolve(buf);
-      }
-    };
+  doc.on('data', (chunk) => chunks.push(chunk));
 
-    const safeReject = (err: any) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        reject(err);
-      }
-    };
+  const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', (err) => reject(err));
+  });
 
-    try {
-      const doc = new PDFDocument({ margin: 30, size: 'A4' });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => safeResolve(Buffer.concat(chunks)));
-      doc.on('error', (err) => safeReject(err));
-
-      for (let i = 0; i < passes.length; i++) {
+  for (let i = 0; i < passes.length; i++) {
         if (i > 0) {
           doc.addPage();
         }
@@ -240,11 +217,8 @@ export async function generateServerPdfPassBuffer(data: ServerPdfPassData): Prom
           '• Please present this official pass (printed or on your smartphone) at venue check-in. • For assistance: singapore@jesusyouth.org',
           30, 592, { align: 'center', width: 535 }
         );
-      }
+  }
 
-      doc.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
+  doc.end();
+  return await pdfPromise;
 }

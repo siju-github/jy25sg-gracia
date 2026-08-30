@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { SiteContentData } from '../types';
-import { Shield, Key, Mail, CheckCircle2, Save, RefreshCw, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Shield, Key, Mail, MailCheck, CheckCircle2, Save, RefreshCw, AlertCircle, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface PortalAuthSettingsCardProps {
   siteContent?: SiteContentData;
@@ -22,6 +22,12 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
   const [enableEmailLogin, setEnableEmailLogin] = useState<boolean>(
     siteContent?.enableEmailLogin ?? false
   );
+  const [enableEmailCodeLogin, setEnableEmailCodeLogin] = useState<boolean>(
+    siteContent?.enableEmailCodeLogin ?? true
+  );
+  const [googleLoginSuperAdminOnly, setGoogleLoginSuperAdminOnly] = useState<boolean>(
+    siteContent?.googleLoginSuperAdminOnly ?? false
+  );
 
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -31,11 +37,13 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
       setEnableGoogleLogin(siteContent.enableGoogleLogin ?? true);
       setEnablePassIdLogin(siteContent.enablePassIdLogin ?? false);
       setEnableEmailLogin(siteContent.enableEmailLogin ?? false);
+      setEnableEmailCodeLogin(siteContent.enableEmailCodeLogin ?? true);
+      setGoogleLoginSuperAdminOnly(siteContent.googleLoginSuperAdminOnly ?? false);
     }
   }, [siteContent]);
 
   const handleSaveSettings = async () => {
-    if (!enableGoogleLogin && !enablePassIdLogin && !enableEmailLogin) {
+    if (!enableGoogleLogin && !enablePassIdLogin && !enableEmailLogin && !enableEmailCodeLogin) {
       setSaveError('At least one authentication method must remain enabled so participants can log in.');
       return;
     }
@@ -47,7 +55,9 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
       await onSave({
         enableGoogleLogin,
         enablePassIdLogin,
-        enableEmailLogin
+        enableEmailLogin,
+        enableEmailCodeLogin,
+        googleLoginSuperAdminOnly
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 4000);
@@ -106,7 +116,7 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {/* Toggle 1: Google OAuth */}
         <div className={`p-5 rounded-2xl border transition-all ${
           enableGoogleLogin
@@ -153,6 +163,18 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
             <p className="text-xs text-white/70 leading-relaxed">
               Main OAuth single sign-on method. Automatically fetches participant Google profile avatar and matches registration.
             </p>
+            <div className="pt-2.5 border-t border-white/10 flex items-center space-x-2 mt-2">
+              <input
+                type="checkbox"
+                id="googleSuperAdminOnly"
+                checked={googleLoginSuperAdminOnly}
+                onChange={(e) => setGoogleLoginSuperAdminOnly(e.target.checked)}
+                className="w-4 h-4 rounded text-[#E8B400] focus:ring-[#E8B400] bg-black/40 border-white/30 cursor-pointer"
+              />
+              <label htmlFor="googleSuperAdminOnly" className="text-xs text-amber-200/90 font-medium cursor-pointer select-none">
+                Show this only for super admin
+              </label>
+            </div>
           </div>
         </div>
 
@@ -188,14 +210,14 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
                 enablePassIdLogin ? 'bg-purple-400 text-slate-950' : 'bg-white/10 text-white/50'
               }`}>
-                Pass ID / Ref Lookup
+                Super Admin Only
               </span>
               <span className="text-[11px] text-white/60 font-mono">
                 {enablePassIdLogin ? 'ENABLED' : 'DISABLED'}
               </span>
             </div>
             <p className="text-xs text-white/70 leading-relaxed">
-              Displays the "Authenticate with Pass ID / Reference Number" card on the portal login screen.
+              When enabled, Pass ID / Reference lookup is made visible strictly for Super Admin accounts on the portal login screen.
             </p>
           </div>
         </div>
@@ -240,6 +262,50 @@ export const PortalAuthSettingsCard: React.FC<PortalAuthSettingsCardProps> = ({
             </div>
             <p className="text-xs text-white/70 leading-relaxed">
               Controls whether standard registered email input fields and email-based pass lookup are enabled on the login screen.
+            </p>
+          </div>
+        </div>
+
+        {/* Toggle 4: Email Confirmation Code (OTP) Login */}
+        <div className={`p-5 rounded-2xl border transition-all ${
+          enableEmailCodeLogin
+            ? 'bg-emerald-500/10 border-emerald-500/40 shadow-lg'
+            : 'bg-white/5 border-white/10 opacity-60'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-300">
+                <MailCheck className="w-4 h-4 text-emerald-300" />
+              </div>
+              <span className="font-bold text-sm text-white">Email Code (OTP)</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setEnableEmailCodeLogin(!enableEmailCodeLogin)}
+              className="cursor-pointer text-emerald-400 hover:text-emerald-300 transition-transform active:scale-95"
+            >
+              {enableEmailCodeLogin ? (
+                <ToggleRight className="w-8 h-8 text-emerald-400" />
+              ) : (
+                <ToggleLeft className="w-8 h-8 text-white/40" />
+              )}
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2">
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                enableEmailCodeLogin ? 'bg-emerald-400 text-slate-950' : 'bg-white/10 text-white/50'
+              }`}>
+                Code Verification
+              </span>
+              <span className="text-[11px] text-white/60 font-mono">
+                {enableEmailCodeLogin ? 'ENABLED' : 'DISABLED'}
+              </span>
+            </div>
+            <p className="text-xs text-white/70 leading-relaxed">
+              Allows participants to log in by validating their registered email address and entering a unique 6-digit confirmation code.
             </p>
           </div>
         </div>

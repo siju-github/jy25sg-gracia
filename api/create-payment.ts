@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import hitpayHandler from './hitpay';
+import hitpayHandler from './hitpay.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   req.query.path = 'create-payment';

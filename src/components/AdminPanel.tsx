@@ -7,7 +7,7 @@ import {
   auth, 
   checkIsAdminApproved, 
   SUPER_ADMIN_EMAIL,
-  PRIMARY_ADMIN_GMAIL,
+  PRIMARY_ADMIN_GMAIL, ALT_SUPER_ADMIN,
   FIREBASE_CONSOLE_AUTH_URL,
   requestAdminAccess,
   fetchAllRegistrations,
@@ -58,6 +58,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { DigitalConferenceBadge } from './DigitalConferenceBadge';
 import { InvitationsAdminPanel } from './InvitationsAdminPanel';
 import { SuperAdminHomePage } from './SuperAdminHomePage';
+import { HitPayInspectorModal } from './HitPayInspectorModal';
 import { PortalAuthSettingsCard } from './PortalAuthSettingsCard';
 import { BibleVersesManager } from './BibleVersesManager';
 import { InvitationAdminRole, formatInvitationRoleName, INVITATION_SUB_ROLE_LABELS } from '../data/invitationsData';
@@ -231,8 +232,12 @@ const AdminPassModal: React.FC<{
             <h3 className="text-xl font-bold font-serif text-white">
               Passes & QR Codes for {reg.name}
             </h3>
-            <p className="text-xs text-amber-200/80">
-              {reg.type === 'musical' ? 'GRACIA Concert Ticket' : 'GRACIA Conference Registration'} • Email: {reg.email}
+            <p className="text-xs text-amber-200/80 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span>{reg.type === 'musical' ? 'GRACIA Concert Ticket' : 'GRACIA Conference Registration'}</span>
+              <span>•</span>
+              <span>Email: {reg.email}</span>
+              <span>•</span>
+              <span className="text-amber-300 font-mono">Registered: {reg.createdAt ? new Date(reg.createdAt).toLocaleString('en-SG', { dateStyle: 'medium', timeStyle: 'short' }) : 'N/A'}</span>
             </p>
           </div>
         </div>
@@ -335,9 +340,11 @@ const AdminPassModal: React.FC<{
 
 interface AdminPanelProps {
   onClose?: () => void;
+  currentUserEmail?: string;
+  currentUserName?: string;
 }
 
-export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
+export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose, currentUserEmail, currentUserName }) => {
   const handleClosePortal = () => {
     if (onClose) {
       onClose();
@@ -998,17 +1005,39 @@ jysg25@jesusyouth.org`
     });
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
       if (currentUser) {
+        setUser(currentUser);
         const approved = await checkIsAdminApproved(currentUser.email);
         setIsApproved(approved);
+      } else if (currentUserEmail) {
+        const syntheticUser = {
+          email: currentUserEmail,
+          displayName: currentUserName || currentUserEmail.split('@')[0],
+        } as User;
+        setUser(syntheticUser);
+        const approved = await checkIsAdminApproved(currentUserEmail);
+        setIsApproved(approved);
       } else {
+        setUser(null);
         setIsApproved(false);
       }
       setLoadingAuth(false);
     });
+
+    if (!auth.currentUser && currentUserEmail) {
+      const syntheticUser = {
+        email: currentUserEmail,
+        displayName: currentUserName || currentUserEmail.split('@')[0],
+      } as User;
+      setUser(syntheticUser);
+      checkIsAdminApproved(currentUserEmail).then((approved) => {
+        setIsApproved(approved);
+        setLoadingAuth(false);
+      });
+    }
+
     return () => unsubscribe();
-  }, []);
+  }, [currentUserEmail, currentUserName]);
 
   // Load Admin Data when approved
   useEffect(() => {
@@ -2638,9 +2667,10 @@ GRACIA Intercession Team`
   const totalToddlers = effectiveRegistrations.reduce((acc, r) => acc + (r.toddlersCount || 0), 0);
   const totalPeopleCount = totalAdults + totalTeens + totalPreteens + totalChildren + totalKids + totalToddlers;
 
-  const isSuperUser = user?.email?.toLowerCase().trim() === SUPER_ADMIN_EMAIL.toLowerCase().trim() || user?.email?.toLowerCase().trim() === 'sijumonabraham@gmail.com';
+  const activeAdminEmail = (user?.email || currentUserEmail || '').toLowerCase().trim();
+  const isSuperUser = activeAdminEmail === SUPER_ADMIN_EMAIL.toLowerCase().trim() || activeAdminEmail === 'sijumonabraham@gmail.com' || activeAdminEmail === PRIMARY_ADMIN_GMAIL.toLowerCase().trim() || activeAdminEmail === ALT_SUPER_ADMIN.toLowerCase().trim();
   
-  const currentUserAdminRecord = adminsList.find(a => a.email.toLowerCase().trim() === user?.email?.toLowerCase().trim());
+  const currentUserAdminRecord = adminsList.find(a => a.email.toLowerCase().trim() === activeAdminEmail);
   const rawRole = currentUserAdminRecord?.role;
   const currentUserRole = isSuperUser 
     ? 'super_admin' 
@@ -4191,6 +4221,7 @@ GRACIA Intercession Team`
                         </th>
                         <th className="p-4">Type</th>
                         <th className="p-4">Primary Registrant (Order Contact)</th>
+                        <th className="p-4">Registration Date & Time</th>
                         <th className="p-4">Contact Details</th>
                         <th className="p-4">Group Summary</th>
                         <th className="p-4">Assigned Seats</th>
@@ -4201,7 +4232,7 @@ GRACIA Intercession Team`
                     <tbody className="divide-y divide-white/10 font-medium">
                       {filteredPrimaryRegistrations.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="p-8 text-center text-white/50 italic">
+                          <td colSpan={9} className="p-8 text-center text-white/50 italic">
                             No active registrations found matching criteria.
                           </td>
                         </tr>
@@ -4286,6 +4317,39 @@ GRACIA Intercession Team`
                                   <div className="text-[11px] font-mono text-white/50">
                                     [Order ID: {reg.paymentReference || (reg.id ? reg.id.slice(0, 8).toUpperCase() : 'G26-001')}]
                                   </div>
+                                  <div className="text-[10px] font-mono text-amber-300/90 flex items-center gap-1 pt-0.5">
+                                    <Clock className="w-3 h-3 text-amber-400 shrink-0" />
+                                    <span>Registered: {reg.createdAt ? new Date(reg.createdAt).toLocaleString('en-SG', { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}</span>
+                                  </div>
+                                </td>
+
+                                {/* Registration Timestamp Column */}
+                                <td className="p-4 align-top space-y-1">
+                                  <div className="flex items-center space-x-1.5 text-amber-300 font-semibold text-xs whitespace-nowrap">
+                                    <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                    <span>
+                                      {reg.createdAt
+                                        ? new Date(reg.createdAt).toLocaleDateString('en-SG', {
+                                            day: '2-digit',
+                                            month: 'short',
+                                            year: 'numeric'
+                                          })
+                                        : 'N/A'}
+                                    </span>
+                                  </div>
+                                  {reg.createdAt && (
+                                    <div className="flex items-center space-x-1.5 text-white/60 text-[11px] font-mono whitespace-nowrap">
+                                      <Clock className="w-3 h-3 text-amber-300/70 shrink-0" />
+                                      <span>
+                                        {new Date(reg.createdAt).toLocaleTimeString('en-SG', {
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                          second: '2-digit',
+                                          hour12: true
+                                        })}
+                                      </span>
+                                    </div>
+                                  )}
                                 </td>
 
                                 {/* Contact Details */}
@@ -4353,7 +4417,7 @@ GRACIA Intercession Team`
                                           View Receipt
                                         </button>
                                       )}
-                                      {isSuperAdmin && (
+                                      {(isSuperAdmin || isFullAdmin) && (
                                         <button
                                           type="button"
                                           onClick={() => setSelectedHitpayInspectorReg(reg)}
@@ -4468,7 +4532,7 @@ GRACIA Intercession Team`
                               {/* Nested Delegate List Accordion Sub-Table */}
                               {isExpanded && (
                                 <tr className="bg-black/60 border-b-2 border-amber-500/30">
-                                  <td colSpan={8} className="p-3 sm:p-5">
+                                  <td colSpan={9} className="p-3 sm:p-5">
                                     <div className="bg-[#0e0414] border border-amber-500/30 rounded-2xl p-4 sm:p-5 space-y-3 shadow-inner">
                                       <div className="flex items-center justify-between">
                                         <h4 className="text-xs font-black uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
@@ -9869,104 +9933,15 @@ GRACIA Intercession Team`
         />
       )}
 
-      {/* MODAL 1: GO LIVE DATA CLEAR MODAL */}
-      {showGoLiveModal && isSuperAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/85 backdrop-blur-md animate-fade-in overflow-hidden">
-          <div className="bg-[#120716] border-2 border-red-500/80 rounded-3xl p-5 sm:p-7 max-w-3xl w-full text-white shadow-2xl relative max-h-[90vh] flex flex-col my-auto overflow-hidden">
-            <button
-              type="button"
-              onClick={() => setShowGoLiveModal(false)}
-              className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors cursor-pointer z-10"
-            >
-              <X className="w-5 h-5" />
-            </button>
+      {/* HitPay Inspector Modal */}
+      {selectedHitpayInspectorReg && (
+          <HitPayInspectorModal
+            reg={registrations.find(r => r.id === selectedHitpayInspectorReg.id) || selectedHitpayInspectorReg}
+            onClose={() => setSelectedHitpayInspectorReg(null)}
+          />
+        )}
+      </div>
+    );
+  };
 
-            {/* Header */}
-            <div className="shrink-0 flex items-center gap-4 border-b border-red-500/30 pb-4 pr-10">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-red-600 to-amber-600 border border-red-400 flex items-center justify-center shadow-lg shrink-0 animate-pulse">
-                <Flame className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h3 className="text-xl sm:text-2xl font-black text-white font-serif tracking-wide flex items-center gap-2">
-                  <span>🚀 GO LIVE: CLEAR ALL TEST REGISTRATION DATA</span>
-                </h3>
-                <p className="text-xs text-red-200/90 mt-0.5">
-                  Prepare system for official launch. All test registrations will be wiped and backed up into audit logs.
-                </p>
-              </div>
-            </div>
-
-            {/* Scrollable Content Body */}
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-5 my-4 pr-1 sm:pr-2">
-              {/* Detailed Summary Stats Box */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-2xl bg-red-950/40 border border-red-500/40">
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-red-300/80">Primary Bookings</span>
-                  <p className="text-xl font-black text-white font-mono">{primaryRegistrations.length}</p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-red-300/80">Total Attendees</span>
-                  <p className="text-xl font-black text-white font-mono">
-                    {primaryRegistrations.reduce((sum, r) => sum + getRegistrationAttendeesCount(r), 0)}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-red-300/80">Conference</span>
-                  <p className="text-xl font-black text-[#3B82F6] font-mono">
-                    {primaryRegistrations.filter(r => r.type !== 'musical').length}
-                  </p>
-                </div>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-red-300/80">Musical Concert</span>
-                  <p className="text-xl font-black text-[#EC4899] font-mono">
-                    {primaryRegistrations.filter(r => r.type === 'musical').length}
-                  </p>
-                </div>
-              </div>
-{/* Pre-Wipe Backup Download & Audit Info */}
-              <div className="bg-amber-500/15 border border-amber-500/40 p-4 rounded-2xl space-y-3">
-                <div className="flex items-start gap-2.5 text-xs text-amber-200">
-                  <Shield className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="font-bold text-white text-sm">Automatic Audit Trail & Snapshot Backup</p>
-                    <p className="leading-relaxed">
-                      A full snapshot of all {registrations.length} registration records will be automatically saved in the Firestore <code className="bg-black/50 px-1.5 py-0.5 rounded text-amber-300 font-mono text-[11px]">audit_backups</code> table prior to deletion.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const backupObj = {
-                      appName: "GRACIA Jubilee 2026",
-                      backupType: "go_live_pre_wipe_backup",
-                      exportTimestamp: new Date().toISOString(),
-                      exportedBy: user?.email || 'Admin',
-                      recordsCount: registrations.length,
-                      records: registrations
-                    };
-                    const jsonStr = JSON.stringify(backupObj, null, 2);
-                    const blob = new Blob([jsonStr], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = `gracia_backup_${new Date().toISOString().slice(0, 10)}.json`;
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-bold shadow-md"
-                >
-                  Export Full Backup
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default AdminPanel;
+  export default AdminPanel;

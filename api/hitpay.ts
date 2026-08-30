@@ -137,40 +137,17 @@ async function generateServerPdfPassBuffer(data: ServerPdfPassData): Promise<Buf
     });
   }
 
-  return new Promise(async (resolve, reject) => {
-    let isSettled = false;
-    const timer = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        reject(new Error('PDF generation timed out after 5000ms'));
-      }
-    }, 5000);
+  const doc = new PDFDocument({ margin: 30, size: 'A4' });
+  const chunks: Buffer[] = [];
 
-    const safeResolve = (buf: Buffer) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        resolve(buf);
-      }
-    };
+  doc.on('data', (chunk) => chunks.push(chunk));
 
-    const safeReject = (err: any) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        reject(err);
-      }
-    };
+  const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', (err) => reject(err));
+  });
 
-    try {
-      const doc = new PDFDocument({ margin: 30, size: 'A4' });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => safeResolve(Buffer.concat(chunks)));
-      doc.on('error', (err) => safeReject(err));
-
-      for (let i = 0; i < passes.length; i++) {
+  for (let i = 0; i < passes.length; i++) {
         if (i > 0) {
           doc.addPage();
         }
@@ -270,13 +247,10 @@ async function generateServerPdfPassBuffer(data: ServerPdfPassData): Promise<Buf
           '• Please present this official pass (printed or on your smartphone) at venue check-in. • For assistance: singapore@jesusyouth.org',
           30, 592, { align: 'center', width: 535 }
         );
-      }
+  }
 
-      doc.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
+  doc.end();
+  return await pdfPromise;
 }
 
 // Environment configurations
@@ -526,30 +500,52 @@ async function sendMailWithFallback(mailOptions: {
  * Verifies official HitPay Webhook HMAC-SHA256 signature
  */
 function verifyHitPaySignature(payload: any, salt: string, signatureHeader?: string): boolean {
-  if (!salt) return true; // If no salt configured, allow through
-  if (!payload || typeof payload !== 'object') return false;
+  const cleanSalt = (salt || '').trim();
+  const cleanSig = (signatureHeader || (payload && payload.hmac) || '').trim();
 
-  const providedHmac = (signatureHeader || payload.hmac || '').trim();
-  if (!providedHmac) return false;
+  if (!cleanSalt) return true; // If no salt configured, allow through
+  if (!cleanSig) return false;
+
+  const timingSafeCompare = (a: string, b: string): boolean => {
+    try {
+      const bufA = Buffer.from(a.toLowerCase(), 'utf8');
+      const bufB = Buffer.from(b.toLowerCase(), 'utf8');
+      if (bufA.length !== bufB.length) return false;
+      return crypto.timingSafeEqual(bufA, bufB);
+    } catch {
+      return false;
+    }
+  };
 
   try {
-    const sortedKeys = Object.keys(payload)
-      .filter(k => k !== 'hmac' && payload[k] !== undefined && payload[k] !== null)
-      .sort();
-
-    const signatureString = sortedKeys.map(k => `${k}${payload[k]}`).join('');
-    const calculatedHmac = crypto.createHmac('sha256', salt).update(signatureString).digest('hex');
-
-    if (calculatedHmac.toLowerCase() === providedHmac.toLowerCase()) {
-      return true;
+    // 1. Raw JSON body string HMAC
+    if (payload) {
+      const jsonStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      const jsonHmac = crypto.createHmac('sha256', cleanSalt).update(jsonStr).digest('hex');
+      if (timingSafeCompare(jsonHmac, cleanSig)) {
+        return true;
+      }
     }
 
-    const jsonHmac = crypto.createHmac('sha256', salt).update(JSON.stringify(payload)).digest('hex');
-    return jsonHmac.toLowerCase() === providedHmac.toLowerCase();
+    // 2. Key-Value sorted concatenation HMAC
+    if (payload && typeof payload === 'object') {
+      const sortedKeys = Object.keys(payload)
+        .filter(k => k.toLowerCase() !== 'hmac' && payload[k] !== undefined && payload[k] !== null)
+        .sort();
+
+      const signatureString = sortedKeys.map(k => `${k}${payload[k]}`).join('');
+      const calculatedHmac = crypto.createHmac('sha256', cleanSalt).update(signatureString).digest('hex');
+
+      if (timingSafeCompare(calculatedHmac, cleanSig)) {
+        return true;
+      }
+    }
   } catch (sigErr) {
     console.error('[HitPay Webhook Signature Error]:', sigErr);
     return false;
   }
+
+  return false;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {

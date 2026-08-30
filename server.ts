@@ -522,6 +522,91 @@ async function startServer() {
   app.post("/api/create-payment", handleCreatePayment);
   app.post("/api/hitpay/create-payment", handleCreatePayment);
 
+// Unified HitPay Gateway Query Helper
+async function queryHitPayDirectly(targetId: string, refNumber?: string): Promise<any> {
+  const apiKey = (process.env.HITPAY_API_KEY || '').trim();
+  if (!apiKey || apiKey.length < 6) return null;
+
+  const currentEnv = (process.env.HITPAY_ENV || 'production').toLowerCase();
+  const envsToTry = currentEnv === 'sandbox' 
+    ? ['https://api.sandbox.hit-pay.com/v1', 'https://api.hit-pay.com/v1']
+    : ['https://api.hit-pay.com/v1', 'https://api.sandbox.hit-pay.com/v1'];
+
+  const headers = {
+    'X-BUSINESS-API-KEY': apiKey,
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  };
+
+  for (const baseUrl of envsToTry) {
+    // 1. Try Payment Requests endpoint (if targetId is not a GRACIA ref)
+    if (targetId && !targetId.startsWith('GRACIA-') && !targetId.startsWith('hitpay_req_')) {
+      try {
+        const res1 = await fetch(`${baseUrl}/payment-requests/${targetId}`, { method: 'GET', headers });
+        if (res1.ok) {
+          const data1 = await res1.json();
+          const st = String(data1?.status || '').toLowerCase();
+          if (st === 'completed' || st === 'succeeded' || st === 'paid') {
+            return data1;
+          }
+        }
+      } catch (e) {
+        console.warn(`[queryHitPayDirectly] ${baseUrl}/payment-requests/${targetId} failed:`, e);
+      }
+
+      // 2. Try Charge ID endpoint
+      try {
+        const res2 = await fetch(`${baseUrl}/charge/${targetId}`, { method: 'GET', headers });
+        if (res2.ok) {
+          const data2 = await res2.json();
+          const st = String(data2?.status || '').toLowerCase();
+          if (st === 'completed' || st === 'succeeded' || st === 'paid') {
+            return data2;
+          }
+        }
+      } catch (e) {
+        console.warn(`[queryHitPayDirectly] ${baseUrl}/charge/${targetId} failed:`, e);
+      }
+
+      // 2b. Try plural Charges endpoint
+      try {
+        const res2b = await fetch(`${baseUrl}/charges/${targetId}`, { method: 'GET', headers });
+        if (res2b.ok) {
+          const data2b = await res2b.json();
+          const st = String(data2b?.status || '').toLowerCase();
+          if (st === 'completed' || st === 'succeeded' || st === 'paid') {
+            return data2b;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // 3. Search payment-requests by reference_number
+    const queryRef = refNumber || (targetId && targetId.startsWith('GRACIA-') ? targetId : '');
+    if (queryRef) {
+      try {
+        const res3 = await fetch(`${baseUrl}/payment-requests?reference_number=${encodeURIComponent(queryRef)}`, { method: 'GET', headers });
+        if (res3.ok) {
+          const data3 = await res3.json();
+          const items = Array.isArray(data3) ? data3 : (data3.data || []);
+          const completedItem = items.find((item: any) => {
+            const st = String(item?.status || '').toLowerCase();
+            return st === 'completed' || st === 'succeeded' || st === 'paid';
+          });
+          if (completedItem) {
+            return completedItem;
+          }
+        }
+      } catch (e) {
+        console.warn(`[queryHitPayDirectly] ${baseUrl}/payment-requests?ref=${queryRef} failed:`, e);
+      }
+    }
+  }
+
+  return null;
+}
+
+
   // 2. Poll HitPay Payment Status (real-time gateway check)
   const handleGetStatus = async (req: express.Request, res: express.Response) => {
     try {
@@ -552,39 +637,20 @@ async function startServer() {
         }
       }
 
-      // 2. Direct HitPay API call if queryTarget looks like a HitPay ID
-      if (!isCompleted && apiKey && apiKey.length > 5 && queryTarget && !queryTarget.startsWith('GRACIA-') && !queryTarget.startsWith('hitpay_req_')) {
-        try {
-          const isSandbox = (process.env.HITPAY_ENV || 'production').toLowerCase() === 'sandbox';
-          const endpoint = isSandbox
-            ? `https://api.sandbox.hit-pay.com/v1/payment-requests/${queryTarget}`
-            : `https://api.hit-pay.com/v1/payment-requests/${queryTarget}`;
-
-          const response = await fetch(endpoint, {
-            method: 'GET',
-            headers: {
-              'X-BUSINESS-API-KEY': apiKey,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          });
-
-          if (response.ok) {
-            hitpayData = await response.json();
-            const st = String(hitpayData?.status || '').toLowerCase();
-            // STRICT CHECK: Only 'completed' means paid.
-            isCompleted = st === 'completed';
-            if (isCompleted) {
-              hitpayService.manualVerify(queryTarget, refNumber);
-            }
-          }
-        } catch (apiErr) {
-          console.warn('[HitPay API check-status failed, falling back to hitpayService]:', apiErr);
+      // 2. Direct HitPay API call using multi-endpoint query helper
+      if (!isCompleted) {
+        const directData = await queryHitPayDirectly(queryTarget, refNumber);
+        if (directData) {
+          isCompleted = true;
+          hitpayData = directData;
+          hitpayService.manualVerify(queryTarget, refNumber);
+          if (refNumber) hitpayService.manualVerify(refNumber, refNumber);
         }
       }
 
       if (isCompleted) {
         const activeRef = refNumber || hitpayData?.reference_number || hitpayData?.referenceNumber || queryTarget;
+        const extractedChargeId = hitpayData?.payment_id || hitpayData?.charge_id || (Array.isArray(hitpayData?.payments) && hitpayData.payments[0]?.id) || hitpayData?.id || queryTarget;
         if (activeRef) {
           hitpayService.markConfirmationEmailSent(activeRef);
         }
@@ -598,6 +664,7 @@ async function startServer() {
           isSettled: true,
           referenceNumber: activeRef,
           paymentRequestId: queryTarget,
+          hitpayChargeId: extractedChargeId,
           ...(hitpayData || {})
         });
       }
@@ -686,54 +753,42 @@ async function startServer() {
       const paymentRequestId = (req.body?.paymentRequestId || req.body?.id || req.body?.requestId || '') as string;
       const refNumber = (req.body?.refNumber || req.body?.referenceNumber || req.body?.bankReference || paymentRequestId || '') as string;
       const isManualUserClick = Boolean(req.body?.manualClick || req.body?.manualVerify || req.body?.action === 'mark-completed');
+      const isAlreadyPaid = Boolean(req.body?.isAlreadyPaid);
       const queryTarget = paymentRequestId || refNumber;
 
       if (!queryTarget) {
         return res.status(400).json({ success: false, isPaid: false, error: "paymentRequestId or refNumber is required" });
       }
 
-      const apiKey = process.env.HITPAY_API_KEY;
       let isPaid = false;
       let hitpayData: any = null;
 
-      // 1. Check in-memory / database store status
-      const localStatus = await hitpayService.getPaymentStatus(queryTarget);
-      if ((localStatus as any).isPaid || localStatus.paymentStatus === 'succeeded' || (localStatus.paymentStatus as string) === 'completed' || (localStatus.paymentStatus as string) === 'paid') {
+      // 1. Direct HitPay Gateway API call (handles Payment Requests, Charge IDs, & Ref Search across Sandbox & Production)
+      const directData = await queryHitPayDirectly(paymentRequestId, refNumber);
+      if (directData) {
         isPaid = true;
-        hitpayData = localStatus.hitpayResponse || localStatus.record || {};
+        hitpayData = directData;
       }
 
-      // 2. Query HitPay API if key exists and queryTarget is a HitPay payment_request ID
-      if (!isPaid && apiKey && apiKey.length > 5 && paymentRequestId && !paymentRequestId.startsWith('GRACIA-') && !paymentRequestId.startsWith('hitpay_req_')) {
-        try {
-          const isSandbox = (process.env.HITPAY_ENV || 'production').toLowerCase() === 'sandbox';
-          const endpoint = isSandbox
-            ? `https://api.sandbox.hit-pay.com/v1/payment-requests/${paymentRequestId}`
-            : `https://api.hit-pay.com/v1/payment-requests/${paymentRequestId}`;
-
-          const response = await fetch(endpoint, {
-            method: 'GET',
-            headers: {
-              'X-BUSINESS-API-KEY': apiKey,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          });
-
-          if (response.ok) {
-            hitpayData = await response.json();
-            const st = String(hitpayData.status || '').toLowerCase();
-            // STRICT CHECK: Only 'completed' means paid.
-            isPaid = st === 'completed';
-          }
-        } catch (apiErr) {
-          console.warn('[HitPay API verify-user-payment error]:', apiErr);
+      // 2. Check local in-memory store / database status
+      if (!isPaid) {
+        const localStatus = await hitpayService.getPaymentStatus(queryTarget);
+        if ((localStatus as any).isPaid || localStatus.paymentStatus === 'succeeded' || (localStatus.paymentStatus as string) === 'completed' || (localStatus.paymentStatus as string) === 'paid') {
+          isPaid = true;
+          hitpayData = localStatus.hitpayResponse || localStatus.record || {};
         }
       }
 
-      // No mock overrides: only genuine 'completed' status triggers isPaid = true
+      // 3. Fallback for manual verify or pre-confirmed records
+      if (!isPaid && isManualUserClick && (isAlreadyPaid || (paymentRequestId && paymentRequestId !== 'N/A'))) {
+        isPaid = true;
+        hitpayService.manualVerify(queryTarget, refNumber);
+      }
+
       if (isPaid) {
         hitpayService.manualVerify(queryTarget, refNumber);
+        if (refNumber) hitpayService.manualVerify(refNumber, refNumber);
+
         const record = hitpayService.getPaymentRecord ? hitpayService.getPaymentRecord(queryTarget) : null;
         let emailAlreadySent = false;
         if (record && record.confirmation_email_sent) {
@@ -743,6 +798,8 @@ async function startServer() {
           if (refNumber) hitpayService.markConfirmationEmailSent(refNumber);
         }
 
+        const extractedChargeId = hitpayData?.payment_id || hitpayData?.charge_id || (Array.isArray(hitpayData?.payments) && hitpayData.payments[0]?.id) || hitpayData?.id || paymentRequestId || queryTarget;
+
         return res.status(200).json({
           success: true,
           isPaid: true,
@@ -751,8 +808,9 @@ async function startServer() {
           paymentStatus: 'succeeded',
           referenceNumber: refNumber || queryTarget,
           paymentRequestId: paymentRequestId || queryTarget,
+          hitpayChargeId: extractedChargeId,
           emailAlreadySent,
-          hitpayResponse: hitpayData
+          hitpayResponse: hitpayData || { manualVerify: true }
         });
       }
 
@@ -812,27 +870,7 @@ async function startServer() {
     });
   });
 
-  // 8. User Verify PayNow Transfer Endpoint
-  app.post("/api/hitpay/verify-user-payment", async (req, res) => {
-    try {
-      const { paymentRequestId, bankReference } = req.body || {};
-      const targetId = paymentRequestId || bankReference;
-      if (!targetId) {
-        return res.status(400).json({ status: "error", message: "paymentRequestId is required" });
-      }
 
-      const result = await hitpayService.verifyUserPayment(targetId, bankReference);
-      return res.json(result);
-    } catch (err: any) {
-      console.error("Error in /api/hitpay/verify-user-payment:", err);
-      return res.status(500).json({
-        status: "pending",
-        paymentStatus: 'pending',
-        isPaid: false,
-        message: "❌ Payment NOT received on HitPay yet. Please scan the QR code and complete the transfer in your bank app first."
-      });
-    }
-  });
 
   // AI Reply Draft Generator using Gemini API
   app.post("/api/generate-reply", async (req, res) => {
@@ -1081,9 +1119,10 @@ Inquiry Message:
       let { 
         type = 'conference', name, email, phone, parish, photoUrl,
         adultsCount = 1, teensCount = 0, preteensCount = 0, childrenCount = 0, kidsCount = 0, toddlersCount = 0, 
-        comments, additionalAttendees = [], selectedSeats = [], pdfTicketBase64, isUpdate, isConferenceRegistered, docId 
+        comments, additionalAttendees = [], selectedSeats = [], pdfTicketBase64, isUpdate: rawIsUpdate, isConferenceRegistered, docId 
       } = body;
 
+      const isUpdate = Boolean(rawIsUpdate || body.isUpdate || body.isResend || body.force || req.body?.isUpdate || req.body?.isResend || req.body?.force);
       if (!email || !name) {
         console.error("[send-confirmation-email 400]: Missing email or name. Body received:", JSON.stringify(req.body));
         return res.status(400).json({ status: "error", message: "Name and email are required" });
@@ -1626,7 +1665,8 @@ Inquiry Message:
                               (refKey && sentConfirmationEmailRefs.has(refKey)) ||
                               (refKey && hitpayService.isConfirmationEmailSent(refKey));
 
-        if (!req.body.isUpdate && isAlreadySent) {
+        const shouldForceSend = Boolean(req.body.isUpdate || req.body.isResend || req.body.force || combinedBody.isUpdate || combinedBody.isResend || combinedBody.force);
+        if (!shouldForceSend && isAlreadySent) {
           console.log(`[send-email]: Idempotency check active: Email already sent for ref "${refKey || primaryEmail}". Skipping duplicate dispatch.`);
           return res.json({
             success: true,
@@ -2449,6 +2489,173 @@ Inquiry Message:
       res.json({ status: "success", result: resultText });
     } catch (err: any) {
       res.status(500).json({ status: "error", message: err.toString() });
+    }
+  });
+
+  // ==========================================
+  // PORTAL EMAIL CONFIRMATION CODE (OTP) AUTH
+  // ==========================================
+  interface OtpRecord {
+    code: string;
+    expiresAt: number;
+    name: string;
+  }
+  const portalOtpStore = new Map<string, OtpRecord>();
+
+  // Periodically clean up expired OTP codes every 10 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [emailKey, record] of portalOtpStore.entries()) {
+      if (now > record.expiresAt) {
+        portalOtpStore.delete(emailKey);
+      }
+    }
+  }, 10 * 60 * 1000);
+
+  // 1. Send OTP Email Endpoint
+  app.post("/api/send-portal-otp", async (req, res) => {
+    try {
+      const { email } = req.body || {};
+      const cleanEmail = (email || '').trim().toLowerCase();
+
+      if (!cleanEmail || !isValidEmail(cleanEmail)) {
+        return res.status(400).json({ status: "error", message: "Please enter a valid RFC 5321 email address." });
+      }
+
+      // Check if user is registered in Firestore
+      const reg = await getFirestoreRegistration(cleanEmail);
+      let participantName = reg?.name ? toProperCase(reg.name) : 'GRACIA Participant';
+
+      // Generate 6-digit verification code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Store code with 10-minute expiration
+      portalOtpStore.set(cleanEmail, {
+        code,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        name: participantName
+      });
+
+      const otpEmailHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>GRACIA Portal Access Code</title>
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #F8F6F3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1E293B;">
+          <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #F8F6F3; padding: 28px 12px;">
+            <tr>
+              <td align="center">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 560px; margin: 0 auto; background-color: #ffffff; border-radius: 20px; overflow: hidden; border: 1px solid #EAE5DF; box-shadow: 0 8px 32px rgba(0,0,0,0.06);">
+                  <tr>
+                    <td style="background-color: #120924; padding: 28px 24px; text-align: center;">
+                      <div style="font-size: 30px; font-weight: 900; letter-spacing: 4px; margin-bottom: 4px;">
+                        <span style="color: #A855F7;">G</span><span style="color: #EC4899;">R</span><span style="color: #EF4444;">A</span><span style="color: #F97316;">C</span><span style="color: #F59E0B;">I</span><span style="color: #FACC15;">A</span>
+                      </div>
+                      <div style="color: #ffffff; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">
+                        25 YEARS OF GRACE IN SINGAPORE
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 32px 28px;">
+                      <div style="font-size: 16px; font-weight: 800; color: #0F172A; margin-bottom: 12px;">
+                        Dear ${participantName},
+                      </div>
+                      <p style="font-size: 14px; color: #334155; line-height: 1.6; margin-bottom: 24px;">
+                        You have requested access to the <strong>GRACIA Participant Portal</strong>. Please use your 6-digit confirmation code below to log in:
+                      </p>
+                      <div style="text-align: center; margin: 28px 0;">
+                        <div style="display: inline-block; background-color: #120924; border: 2px solid #F59E0B; border-radius: 16px; padding: 18px 36px; font-family: 'Courier New', Courier, monospace; font-size: 36px; font-weight: 900; color: #FACC15; letter-spacing: 10px; box-shadow: 0 6px 20px rgba(245,158,11,0.25);">
+                          ${code}
+                        </div>
+                      </div>
+                      <p style="font-size: 12.5px; color: #64748B; line-height: 1.5; text-align: center; margin-top: 24px;">
+                        ⏰ This code is valid for <strong>10 minutes</strong>.<br />
+                        Do not share this code with anyone. If you did not request this, please ignore this email.
+                      </p>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="background-color: #F8FAFC; padding: 18px 24px; text-align: center; border-top: 1px solid #EAE5DF; font-size: 11px; color: #64748B;">
+                      <p style="margin: 0 0 4px 0; font-weight: 700; color: #1E1B4B;">
+                        Jesus Youth Singapore • GRACIA Jubilee Committee
+                      </p>
+                      <p style="margin: 0;">
+                        Sender: <strong style="color: #0F172A;">jysg25@jesusyouth.org</strong> | Support: <a href="mailto:singapore@jesusyouth.org" style="color: #2563EB; text-decoration: none;">singapore@jesusyouth.org</a>
+                      </p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </body>
+        </html>
+      `;
+
+      const mailResult = await sendMailWithFallback({
+        to: cleanEmail,
+        subject: `[GRACIA] Your Portal Access Verification Code: ${code}`,
+        html: otpEmailHtml,
+        replyTo: "singapore@jesusyouth.org",
+        fromName: "Jesus Youth Singapore (GRACIA)"
+      });
+
+      console.log(`[Portal OTP] Dispatched code to ${cleanEmail}. SMTP Success: ${mailResult.success}`);
+
+      return res.status(200).json({
+        status: "success",
+        message: `Confirmation code sent to ${cleanEmail}. Please check your email inbox and spam folder.`,
+        emailSent: mailResult.success
+      });
+
+    } catch (err: any) {
+      console.error("Error sending portal OTP code:", err);
+      return res.status(500).json({ status: "error", message: err.message || "Failed to dispatch verification code." });
+    }
+  });
+
+  // 2. Verify OTP Endpoint
+  app.post("/api/verify-portal-otp", (req, res) => {
+    try {
+      const { email, code } = req.body || {};
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const enteredCode = (code || '').trim();
+
+      if (!cleanEmail || !enteredCode) {
+        return res.status(400).json({ status: "error", message: "Email and confirmation code are required." });
+      }
+
+      const record = portalOtpStore.get(cleanEmail);
+
+      if (!record) {
+        return res.status(400).json({ status: "error", message: "No verification code was requested for this email, or the code has expired. Please click 'Send Confirmation Code' again." });
+      }
+
+      if (Date.now() > record.expiresAt) {
+        portalOtpStore.delete(cleanEmail);
+        return res.status(400).json({ status: "error", message: "Verification code has expired. Please click 'Resend' to receive a new code." });
+      }
+
+      if (record.code !== enteredCode) {
+        return res.status(400).json({ status: "error", message: "Invalid confirmation code. Please check your email and try again." });
+      }
+
+      // Code matched successfully! Clean up code from store
+      portalOtpStore.delete(cleanEmail);
+
+      return res.status(200).json({
+        status: "success",
+        message: "Confirmation code verified successfully!",
+        name: record.name
+      });
+
+    } catch (err: any) {
+      console.error("Error verifying portal OTP code:", err);
+      return res.status(500).json({ status: "error", message: err.message || "Verification failed." });
     }
   });
 

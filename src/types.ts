@@ -78,6 +78,8 @@ export interface RegistrationData {
   hitpayError?: any;
   hitpayPayload?: any;
   hitpayResponse?: any;
+  hitpayChargeId?: string;
+  hitpayPaymentRequestId?: string;
   checkedIn?: boolean;
   checkedInAt?: string;
   checkedInBy?: string;
@@ -190,4 +192,6 @@ export interface SiteContentData {
   enableGoogleLogin?: boolean;
   enablePassIdLogin?: boolean;
   enableEmailLogin?: boolean;
+  enableEmailCodeLogin?: boolean;
+  googleLoginSuperAdminOnly?: boolean;
 }

@@ -493,7 +493,28 @@ export const updateRegistrationInFirestore = async (
 ): Promise<boolean> => {
   if (!docId) return false;
   try {
-    const docRef = doc(db, 'registrations', docId);
+    let targetDocId = docId;
+    try {
+      const directRef = doc(db, 'registrations', docId);
+      const directSnap = await getDoc(directRef);
+      if (!directSnap.exists()) {
+        const qPass = query(collection(db, 'registrations'), where('passId', '==', docId));
+        const snapPass = await getDocs(qPass);
+        if (!snapPass.empty) {
+          targetDocId = snapPass.docs[0].id;
+        } else {
+          const qRef = query(collection(db, 'registrations'), where('paymentReference', '==', docId));
+          const snapRef = await getDocs(qRef);
+          if (!snapRef.empty) {
+            targetDocId = snapRef.docs[0].id;
+          }
+        }
+      }
+    } catch (lookupErr) {
+      console.warn('Doc resolution fallback warning:', lookupErr);
+    }
+
+    const docRef = doc(db, 'registrations', targetDocId);
     const rawData = { ...regData };
 
     if (!rawData.passId && (rawData.email || rawData.phone || rawData.name)) {
@@ -894,43 +915,102 @@ export const findRegistrationByDetails = async (
     // Sort descending by createdAt
     all.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
 
-    // Priority 1: Email + Name match
+    // Separate primary records vs sub-records (additional attendees)
+    const primaryRecords = all.filter(r => !r.isAdditionalAttendee && !r.primaryContactId);
+
+    const resolvePrimary = (doc: RegistrationData): RegistrationData => {
+      if (!doc.isAdditionalAttendee && !doc.primaryContactId) return doc;
+      if (doc.primaryContactId) {
+        const parent = primaryRecords.find(p => p.id === doc.primaryContactId);
+        if (parent) return parent;
+      }
+      if (doc.primaryContactEmail || doc.email) {
+        const parentEmail = (doc.primaryContactEmail || doc.email)?.trim().toLowerCase();
+        const parent = primaryRecords.find(p => p.email?.trim().toLowerCase() === parentEmail);
+        if (parent) return parent;
+      }
+      return doc;
+    };
+
+    let matchedDoc: RegistrationData | null = null;
+
+    // Priority 1: Email + Name match (prefer primary record first)
     if (normEmail && normName) {
-      const exactMatch = all.find(r => 
+      const exactPrimary = primaryRecords.find(r => 
         r.email?.trim().toLowerCase() === normEmail && 
         r.name?.trim().toLowerCase() === normName
       );
-      if (exactMatch) {
-        if (!exactMatch.passId) {
-          exactMatch.passId = getBibleVersePassId(getPersonDeterministicSeed(exactMatch.email, exactMatch.phone, exactMatch.name), 0, exactMatch.name);
-        }
-        return exactMatch;
+      if (exactPrimary) {
+        matchedDoc = exactPrimary;
+      } else {
+        const exactSub = all.find(r =>
+          r.email?.trim().toLowerCase() === normEmail &&
+          r.name?.trim().toLowerCase() === normName
+        );
+        if (exactSub) matchedDoc = resolvePrimary(exactSub);
       }
     }
 
-    // Priority 2: Email match
-    if (normEmail) {
-      const emailMatch = all.find(r => r.email?.trim().toLowerCase() === normEmail);
-      if (emailMatch) {
-        if (!emailMatch.passId) {
-          emailMatch.passId = getBibleVersePassId(getPersonDeterministicSeed(emailMatch.email, emailMatch.phone, emailMatch.name), 0, emailMatch.name);
-        }
-        return emailMatch;
+    // Priority 2: Email match (prefer primary record first)
+    if (!matchedDoc && normEmail) {
+      const emailPrimary = primaryRecords.find(r => r.email?.trim().toLowerCase() === normEmail);
+      if (emailPrimary) {
+        matchedDoc = emailPrimary;
+      } else {
+        const emailSub = all.find(r => r.email?.trim().toLowerCase() === normEmail);
+        if (emailSub) matchedDoc = resolvePrimary(emailSub);
       }
     }
 
-    // Priority 3: Phone match
-    if (normPhone && normPhone.length >= 8) {
-      const phoneMatch = all.find(r => r.phone?.replace(/\D/g, '') === normPhone);
-      if (phoneMatch) {
-        if (!phoneMatch.passId) {
-          phoneMatch.passId = getBibleVersePassId(getPersonDeterministicSeed(phoneMatch.email, phoneMatch.phone, phoneMatch.name), 0, phoneMatch.name);
-        }
-        return phoneMatch;
+    // Priority 3: Phone match (prefer primary record first)
+    if (!matchedDoc && normPhone && normPhone.length >= 8) {
+      const phonePrimary = primaryRecords.find(r => r.phone?.replace(/\D/g, '') === normPhone);
+      if (phonePrimary) {
+        matchedDoc = phonePrimary;
+      } else {
+        const phoneSub = all.find(r => r.phone?.replace(/\D/g, '') === normPhone);
+        if (phoneSub) matchedDoc = resolvePrimary(phoneSub);
       }
     }
 
-    return null;
+    if (!matchedDoc) return null;
+
+    // Ensure matchedDoc is canonical primary doc
+    matchedDoc = resolvePrimary(matchedDoc);
+
+    // Check if matchedDoc or any of its sub-documents has confirmed status or paid status
+    const subDocs = all.filter(s => s.isAdditionalAttendee && (s.primaryContactId === matchedDoc!.id || s.primaryContactEmail === matchedDoc!.email));
+    const hasConfirmedSubDoc = subDocs.some(s => s.status === 'confirmed');
+
+    if (hasConfirmedSubDoc || matchedDoc.status === 'confirmed') {
+      matchedDoc.status = 'confirmed';
+      if (!matchedDoc.paymentStatus || matchedDoc.paymentStatus === 'pending') {
+        matchedDoc.paymentStatus = 'paid';
+      }
+    }
+
+    if (!matchedDoc.passId) {
+      matchedDoc.passId = getBibleVersePassId(getPersonDeterministicSeed(matchedDoc.email, matchedDoc.phone, matchedDoc.name), 0, matchedDoc.name);
+    }
+
+    // Ensure numeric paymentAmount is set if confirmed/paid but missing on record
+    const isPaidConfirmed = Boolean(
+      (matchedDoc.paymentStatus && ['succeeded', 'verified', 'completed', 'paid'].includes(matchedDoc.paymentStatus)) ||
+      matchedDoc.status === 'confirmed' ||
+      (matchedDoc as any).paymentVerified === true ||
+      (matchedDoc as any).isPaid === true
+    );
+
+    if (isPaidConfirmed && (!matchedDoc.paymentAmount || matchedDoc.paymentAmount <= 0)) {
+      const payingPax = (matchedDoc.adultsCount || 0) + (matchedDoc.teensCount || 0);
+      if (payingPax >= 4) {
+        matchedDoc.paymentAmount = 100;
+      } else if (payingPax > 0) {
+        matchedDoc.paymentAmount = payingPax * 25;
+      }
+    }
+
+    return matchedDoc;
   } catch (err) {
     console.error('Error searching registration:', err);
     return null;

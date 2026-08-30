@@ -5,7 +5,18 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { INITIAL_400_BIBLE_VERSES } from '../src/data/inspiringBibleVerses400';
+import { INITIAL_400_BIBLE_VERSES as rawBibleVerses } from '../src/data/inspiringBibleVerses400.js';
+
+const FALLBACK_BIBLE_VERSES = [
+  { reference: 'JOHN-3:16', text: 'For God so loved the world that he gave his only Son.' },
+  { reference: 'PHILIPPIANS-4:13', text: 'I can do all things through Christ who strengthens me.' },
+  { reference: 'NUMBERS-6:24', text: 'The Lord bless you and keep you; the Lord make his face shine upon you.' },
+  { reference: 'PSALMS-23:1', text: 'The Lord is my shepherd; I shall not want.' }
+];
+
+const INITIAL_400_BIBLE_VERSES = (rawBibleVerses && Array.isArray(rawBibleVerses) && rawBibleVerses.length > 0)
+  ? rawBibleVerses
+  : FALLBACK_BIBLE_VERSES;
 
 const currentDir = typeof __dirname !== 'undefined'
   ? __dirname
@@ -125,40 +136,17 @@ async function generateServerPdfPassBuffer(data: ServerPdfPassData): Promise<Buf
     });
   }
 
-  return new Promise(async (resolve, reject) => {
-    let isSettled = false;
-    const timer = setTimeout(() => {
-      if (!isSettled) {
-        isSettled = true;
-        reject(new Error('PDF generation timed out after 5000ms'));
-      }
-    }, 5000);
+  const doc = new PDFDocument({ margin: 30, size: 'A4' });
+  const chunks: Buffer[] = [];
 
-    const safeResolve = (buf: Buffer) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        resolve(buf);
-      }
-    };
+  doc.on('data', (chunk) => chunks.push(chunk));
 
-    const safeReject = (err: any) => {
-      if (!isSettled) {
-        isSettled = true;
-        clearTimeout(timer);
-        reject(err);
-      }
-    };
+  const pdfPromise = new Promise<Buffer>((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', (err) => reject(err));
+  });
 
-    try {
-      const doc = new PDFDocument({ margin: 30, size: 'A4' });
-      const chunks: Buffer[] = [];
-
-      doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => safeResolve(Buffer.concat(chunks)));
-      doc.on('error', (err) => safeReject(err));
-
-      for (let i = 0; i < passes.length; i++) {
+  for (let i = 0; i < passes.length; i++) {
         if (i > 0) {
           doc.addPage();
         }
@@ -258,13 +246,10 @@ async function generateServerPdfPassBuffer(data: ServerPdfPassData): Promise<Buf
           '• Please present this official pass (printed or on your smartphone) at venue check-in. • For assistance: singapore@jesusyouth.org',
           30, 592, { align: 'center', width: 535 }
         );
-      }
+  }
 
-      doc.end();
-    } catch (e) {
-      reject(e);
-    }
-  });
+  doc.end();
+  return await pdfPromise;
 }
 
 function getBookAbbrev(bookName: string): string {
@@ -668,19 +653,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { 
-      type, name, email, phone, parish, photoUrl,
-      adultsCount = 1, teensCount = 0, preteensCount = 0, childrenCount = 0, kidsCount = 0, toddlersCount = 0, 
-      comments, additionalAttendees = [], selectedSeats = [], pdfTicketBase64, isUpdate, isConferenceRegistered, docId 
-    } = req.body || {};
+    let body = req.body || {};
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        console.error('Failed to parse stringified req.body in send-confirmation-email:', e);
+      }
+    }
+    const regData = body.registrationData || {};
 
-    if (!email || !name) {
-      return res.status(400).json({ status: "error", message: "Name and email are required" });
+    const type = body.type || regData.type || 'conference';
+    const phone = body.phone || regData.phone || '';
+    const parish = body.parish || regData.parish || '';
+    const photoUrl = body.photoUrl || regData.photoUrl || '';
+    const comments = body.comments || regData.comments || '';
+    const selectedSeats = body.selectedSeats || regData.selectedSeats || [];
+    const pdfTicketBase64 = body.pdfTicketBase64 || regData.pdfTicketBase64 || '';
+    const isUpdate = Boolean(body.isUpdate || body.isResend || body.force || regData.isUpdate || regData.isResend || regData.force);
+    const isConferenceRegistered = body.isConferenceRegistered ?? regData.isConferenceRegistered ?? false;
+    const docId = body.docId || regData.docId || body.refNumber || body.referenceNumber || body.ref || body.passId || '';
+
+    const adultsCount = body.adultsCount ?? regData.adultsCount ?? 1;
+    const teensCount = body.teensCount ?? regData.teensCount ?? 0;
+    const preteensCount = body.preteensCount ?? regData.preteensCount ?? 0;
+    const childrenCount = body.childrenCount ?? regData.childrenCount ?? 0;
+    const kidsCount = body.kidsCount ?? regData.kidsCount ?? 0;
+    const toddlersCount = body.toddlersCount ?? regData.toddlersCount ?? 0;
+
+    // Robust normalized extraction for primary email and name with all common alias fallbacks
+    const rawEmail = body.email || body.primaryEmail || body.recipientEmail || body.to || regData.email || regData.primaryEmail || '';
+    const email = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+
+    const rawName = body.name || body.recipientName || body.fullName || body.primaryContactName || regData.name || regData.primaryContactName || '';
+    const name = (typeof rawName === 'string' && rawName.trim().length > 0) ? rawName.trim() : 'Delegate';
+
+    if (!email) {
+      return res.status(400).json({ status: "error", message: "Recipient email address is required" });
     }
 
     if (!isValidEmail(email)) {
       return res.status(400).json({ status: "error", message: `Invalid recipient address: "${email}" does not satisfy RFC 5321 email syntax.` });
     }
+
+    // Robust normalized extraction for additional attendees (supports string emails, array of objects, and legacy keys)
+    const rawAdditional = body.additionalAttendees || body.attendees || body.attendeeEmails || regData.additionalAttendees || regData.attendees || [];
+    const additionalAttendees = (Array.isArray(rawAdditional) ? rawAdditional : []).map((addon: any, idx: number) => {
+      if (typeof addon === 'string') {
+        const addonEmail = addon.trim().toLowerCase();
+        return {
+          name: `Delegate Member ${idx + 1}`,
+          email: addonEmail,
+          category: 'adult',
+          categoryLabel: 'Delegate Member',
+          passId: getInlineVersePassId(docId || email || name, idx + 1, `Delegate Member ${idx + 1}`)
+        };
+      }
+      const addonName = addon?.name || addon?.fullName || addon?.recipientName || `Delegate Member ${idx + 1}`;
+      const addonEmail = (addon?.email || addon?.recipientEmail || '').trim().toLowerCase();
+      return {
+        ...addon,
+        name: addonName,
+        email: addonEmail,
+        category: addon?.category || 'adult',
+        categoryLabel: addon?.categoryLabel || addon?.category || 'Delegate Member',
+        passId: addon?.passId || getInlineVersePassId(docId || email || name, idx + 1, addonName)
+      };
+    });
 
     const isMusical = type === 'musical';
     const eventName = isMusical ? "GRACIA Musical Concert" : "GRACIA - Jubilee Conference, 25 years of grace in Singapore";
@@ -824,8 +863,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const colorHex = card.groupColor?.colorHex || '#DC2626';
       const groupName = card.groupColor?.name || 'St. Peter';
       const photoUrlStr = card.photoUrl && card.photoUrl.startsWith('http') ? card.photoUrl : null;
-      const qrImgSrc = card.qrCid ? `cid:${card.qrCid}` : (card.qrPublicUrl || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(card.passId)}`);
-
+      const qrImgSrc = card.qrPublicUrl || `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(card.passId)}`;
       return `
         <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #FAF8F6; border: 1.5px solid #E2D9D0; border-radius: 16px; margin-bottom: 24px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.04);">
           <!-- CARD HEADER -->

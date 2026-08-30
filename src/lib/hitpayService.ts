@@ -121,19 +121,15 @@ class HitPayService {
    * 4. Compute HMAC-SHA256 hash using HITPAY_SALT
    * 5. Compare computed hash with incoming signature
    */
-  public verifyWebhookSignature(payload: any, signatureHeader?: string): { isValid: boolean; reason?: string } {
-    const salt = this.getWebhookSalt();
+  public verifyWebhookSignature(payload: any, signatureHeader?: string, rawBody?: string): { isValid: boolean; reason?: string } {
+    const salt = (this.getWebhookSalt() || '').trim();
     if (!salt) {
       return { isValid: true, reason: 'HITPAY_SALT not set; signature check bypassed' };
     }
 
-    if (!payload || typeof payload !== 'object') {
-      return { isValid: false, reason: 'Invalid or empty payload' };
-    }
-
     const providedHmac = (
       signatureHeader ||
-      payload.hmac ||
+      (payload && payload.hmac) ||
       ''
     ).trim();
 
@@ -141,29 +137,52 @@ class HitPayService {
       return { isValid: false, reason: 'No HMAC signature provided in payload or headers' };
     }
 
+    const timingSafeCompare = (a: string, b: string): boolean => {
+      try {
+        const bufA = Buffer.from(a.toLowerCase(), 'utf8');
+        const bufB = Buffer.from(b.toLowerCase(), 'utf8');
+        if (bufA.length !== bufB.length) return false;
+        return crypto.timingSafeEqual(bufA, bufB);
+      } catch {
+        return false;
+      }
+    };
+
     try {
-      // 1. Official HitPay Key-Value concatenation
-      const sortedKeys = Object.keys(payload)
-        .filter(k => k !== 'hmac' && payload[k] !== undefined && payload[k] !== null)
-        .sort();
-
-      const signatureString = sortedKeys.map(k => `${k}${payload[k]}`).join('');
-      const calculatedHmac = crypto.createHmac('sha256', salt).update(signatureString).digest('hex');
-
-      if (calculatedHmac.toLowerCase() === providedHmac.toLowerCase()) {
-        return { isValid: true };
+      // 1. Raw body HMAC check
+      if (rawBody) {
+        const rawHmac = crypto.createHmac('sha256', salt).update(rawBody).digest('hex');
+        if (timingSafeCompare(rawHmac, providedHmac)) {
+          return { isValid: true };
+        }
       }
 
-      // Fallback check: raw JSON string representation if sent as JSON body
-      const jsonHmac = crypto.createHmac('sha256', salt).update(JSON.stringify(payload)).digest('hex');
-      if (jsonHmac.toLowerCase() === providedHmac.toLowerCase()) {
-        return { isValid: true };
+      // 2. Official HitPay Key-Value concatenation
+      if (payload && typeof payload === 'object') {
+        const sortedKeys = Object.keys(payload)
+          .filter(k => k.toLowerCase() !== 'hmac' && payload[k] !== undefined && payload[k] !== null)
+          .sort();
+
+        const signatureString = sortedKeys.map(k => `${k}${payload[k]}`).join('');
+        const calculatedHmac = crypto.createHmac('sha256', salt).update(signatureString).digest('hex');
+
+        if (timingSafeCompare(calculatedHmac, providedHmac)) {
+          return { isValid: true };
+        }
+
+        // Fallback check: JSON string
+        const jsonHmac = crypto.createHmac('sha256', salt).update(JSON.stringify(payload)).digest('hex');
+        if (timingSafeCompare(jsonHmac, providedHmac)) {
+          return { isValid: true };
+        }
+
+        return {
+          isValid: false,
+          reason: `HMAC mismatch (Calculated: ${calculatedHmac.slice(0, 8)}..., Provided: ${providedHmac.slice(0, 8)}...)`
+        };
       }
 
-      return {
-        isValid: false,
-        reason: `HMAC mismatch (Calculated: ${calculatedHmac.slice(0, 8)}..., Provided: ${providedHmac.slice(0, 8)}...)`
-      };
+      return { isValid: false, reason: 'Payload format not recognized' };
     } catch (err: any) {
       return { isValid: false, reason: err.message || 'Error computing HMAC' };
     }

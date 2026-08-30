@@ -250,15 +250,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { recipientEmail, recipientName, subject, replyText, adminEmail, adminName, pdfBase64, pdfFilename, emailType, isRawHtml, appsScriptUrl } = req.body || {};
+    let body = req.body || {};
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch (e) {
+        console.error('Failed to parse stringified req.body in send-email:', e);
+      }
+    }
 
-    if (!recipientEmail || !replyText) {
-      return res.status(400).json({ status: 'error', message: 'recipientEmail and replyText are required' });
+    // 1. If action is send-confirmation OR request contains registration/pass fields, delegate to confirmation pass handler
+    const isConfirmationRequest = 
+      body.action === 'send-confirmation' || 
+      body.action === 'send-pass' || 
+      Boolean(body.refNumber) || 
+      Boolean(body.referenceNumber) || 
+      Boolean(body.registrationData) ||
+      (Boolean(body.primaryEmail) && !body.replyText && !body.html);
+
+    if (isConfirmationRequest) {
+      try {
+        let handler: any;
+        try {
+          // @ts-ignore
+          handler = (await import('./send-confirmation-email.js')).default;
+        } catch (err1) {
+          try {
+            // @ts-ignore
+            handler = (await import('./send-confirmation-email')).default;
+          } catch (err2) {
+            console.error('Dynamic import of send-confirmation-email failed:', err1, err2);
+          }
+        }
+        if (typeof handler === 'function') {
+          return await handler(req, res);
+        }
+      } catch (delegationErr: any) {
+        console.error('Error delegating to confirmation email handler:', delegationErr);
+      }
+    }
+
+    // 2. Extract and normalize fields with comprehensive fallback aliases for standard/inquiry emails
+    const rawRecipientEmail = body.recipientEmail || body.email || body.primaryEmail || body.to || body.registrationData?.email || '';
+    const recipientEmail = typeof rawRecipientEmail === 'string' ? rawRecipientEmail.trim().toLowerCase() : '';
+
+    const rawRecipientName = body.recipientName || body.name || body.fullName || body.primaryContactName || body.registrationData?.name || '';
+    const recipientName = (typeof rawRecipientName === 'string' && rawRecipientName.trim().length > 0) ? rawRecipientName.trim() : 'Delegate';
+
+    const subject = body.subject || "GRACIA Update - Jesus Youth Singapore";
+    const rawReplyText = body.replyText || body.html || body.htmlContent || body.body || body.message || body.text || '';
+
+    if (!recipientEmail) {
+      return res.status(400).json({ status: 'error', message: 'Recipient email address is required' });
     }
 
     if (!isValidEmail(recipientEmail)) {
       return res.status(400).json({ status: 'error', message: `Invalid recipient address: "${recipientEmail}" does not satisfy RFC 5321 email syntax.` });
     }
+
+    const replyText = rawReplyText || `Thank you for registering for GRACIA 2026. Your registration and details have been recorded.`;
+
+    const { adminEmail, adminName, pdfBase64, pdfFilename, emailType, isRawHtml } = body;
 
     const attachments: any[] = [...getHeaderLogoAttachments()];
     if (pdfBase64) {

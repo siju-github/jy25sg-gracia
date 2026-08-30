@@ -35,6 +35,8 @@ export interface HitPayRegistrationPaymentProps {
     paymentRequestId: string;
     amount: number;
     referenceNumber: string;
+    hitpayChargeId?: string;
+    hitpayResponse?: any;
   }) => void;
   onSkipOrBypass?: () => void;
   className?: string;
@@ -172,10 +174,13 @@ export const HitPayRegistrationPayment: React.FC<HitPayRegistrationPaymentProps>
     }
 
     // 3. Notify parent component to show Step 3 View Digital Passes
+    const extractedChargeId = (paymentResult as any)?.hitpayChargeId || (paymentResult as any)?.payment_id || (paymentResult as any)?.charge_id || session?.id || initialPaymentRequestId || activeRef;
     onPaymentCompleted({
       paymentRequestId: session?.id || initialPaymentRequestId || activeRef,
       amount,
-      referenceNumber: activeRef
+      referenceNumber: activeRef,
+      hitpayChargeId: extractedChargeId,
+      hitpayResponse: paymentResult || session
     });
   }, [referenceNumber, session, initialPaymentRequestId, isEmailDispatched, userEmail, additionalAttendees, amount, onPaymentCompleted]);
 
